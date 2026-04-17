@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Social Search</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    body { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .card-enter { animation: fadeInUp 0.35s ease both; }
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .skeleton { background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 4px; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .progress-bar-inner { transition: width 0.4s ease; }
+    #progress-wrap { transition: opacity 0.5s ease; }
+    .spinner { border: 2px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; width: 14px; height: 14px; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 5px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .card-pending .enrich-zone { opacity: 0.45; }
+    .card-enriched .enrich-zone { opacity: 1; transition: opacity 0.4s ease; }
+    .card-failed .enrich-zone { opacity: 0.35; }
+    /* ── media grid ── */
+    .media-grid { margin-top: 8px; border-radius: 12px; overflow: hidden; display: grid; gap: 2px; }
+    .media-grid.count-1 { grid-template-columns: 1fr; height: 300px; }
+    .media-grid.count-2 { grid-template-columns: 1fr 1fr; height: 220px; }
+    .media-grid.count-3 { grid-template-columns: 2fr 1fr; height: 240px; }
+    .media-grid.count-3 .media-col { display: grid; gap: 2px; grid-template-rows: 1fr 1fr; }
+    .media-grid.count-4p { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; height: 260px; }
+    .media-cell { position: relative; overflow: hidden; background: #e5e7eb; display: block; cursor: pointer; }
+    .media-cell img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s ease; }
+    .media-cell:hover img { transform: scale(1.03); }
+    .media-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.4rem; font-weight: 700; letter-spacing: .5px; }
+    /* lightbox */
+    #lightbox { background: rgba(0,0,0,.92); }
+    #lightbox { display: flex; align-items: center; justify-content: center; }
+    #lb-img { max-width: calc(100vw - 120px); max-height: calc(100vh - 80px); object-fit: contain; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.6); user-select: none; }
+    .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.15); backdrop-filter: blur(4px); border: none; color: #fff; font-size: 1.8rem; line-height: 1; width: 48px; height: 48px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+    .lb-nav:hover { background: rgba(255,255,255,.28); }
+    #lb-prev { left: 16px; }
+    #lb-next { right: 16px; }
+    #lb-close { position: absolute; top: 14px; right: 18px; background: rgba(255,255,255,.15); backdrop-filter: blur(4px); border: none; color: #fff; font-size: 1.4rem; line-height: 1; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+    #lb-close:hover { background: rgba(255,255,255,.28); }
+    #lb-counter { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.8); font-size: .8rem; background: rgba(0,0,0,.4); padding: 3px 12px; border-radius: 20px; pointer-events: none; }
+    .comments-zone { border-top: 1px solid #f3f4f6; margin-top: 10px; padding-top: 8px; }
+    .comment-item + .comment-item { border-top: 1px solid #f9fafb; }
+    .comment-avatar { width: 24px; height: 24px; border-radius: 50%; background: #dbeafe; color: #2563eb; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #f1f1f1; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    /* ── platform selector ── */
+    .plat-btn { transition: all .15s; }
+    .plat-btn.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+    .plat-btn:not(.active) { background: #fff; color: #4b5563; border-color: #d1d5db; }
+    .plat-btn:not(.active):hover { border-color: #93c5fd; color: #1d4ed8; }
+    /* ── tab bar ── */
+    .tab-btn { color: #6b7280; border-bottom-color: transparent; }
+    .tab-btn.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
+    .tab-btn:not(.active):hover { color: #374151; }
+    /* ── insights panel ── */
+    .insight-section { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; padding: 16px; margin-bottom: 12px; }
+    .insight-section h3 { font-size: .85rem; font-weight: 600; color: #374151; margin-bottom: 12px; letter-spacing: .01em; }
+    .topic-item { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #f3f4f6; gap: 8px; }
+    .topic-item:last-child { border-bottom: none; }
+    .suggestion-item { padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+    .suggestion-item:last-child { border-bottom: none; }
+    .insights-progress-bar { background: #e5e7eb; border-radius: 999px; height: 6px; overflow: hidden; margin-top: 8px; }
+    .insights-progress-fill { background: #3b82f6; height: 100%; border-radius: 999px; transition: width .4s ease; }
+    .insights-chart-wrap { position: relative; height: 180px; }
+    /* ── settings modal ── */
+    #settings-modal { background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- TOKEN SCREEN -->
+<div id="token-screen" class="hidden fixed inset-0 bg-white z-50 flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full mx-4">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+      </div>
+      <div>
+        <h2 class="text-lg font-bold text-gray-900">Apify API Token</h2>
+        <p class="text-sm text-gray-500">Required to run searches</p>
+      </div>
+    </div>
+    <input id="token-input" type="password" placeholder="apify_api_…"
+      class="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 font-mono" />
+    <button onclick="saveToken()"
+      class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition text-sm">
+      Save &amp; Continue
+    </button>
+    <p id="token-err" class="text-red-500 text-xs mt-2 hidden">Please enter a valid token.</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="hidden">
+
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+      <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      </div>
+      <h1 class="font-bold text-gray-900 text-lg">Social Search</h1>
+      <div class="ml-auto flex items-center gap-1">
+        <button onclick="openSettingsModal()" title="Settings (Apify token + Claude API key)"
+          class="text-gray-400 hover:text-gray-600 transition p-1 rounded">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Search Form -->
+  <div class="max-w-4xl mx-auto px-4 pt-6 pb-4">
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
+      <div class="flex gap-3 mb-4">
+        <input id="kw" type="text" placeholder="Search posts…"
+          class="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onkeydown="if(event.key==='Enter')doSearch()" />
+        <button id="search-btn" onclick="doSearch()"
+          class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl transition text-sm shrink-0">
+          Search
+        </button>
+      </div>
+      <!-- Platform selector -->
+      <div class="flex gap-1.5 mb-4">
+        <button onclick="setPlatform('facebook')" id="plat-facebook" class="plat-btn active px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+          🔵 Facebook
+        </button>
+        <button onclick="setPlatform('linkedin')" id="plat-linkedin" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+          🔷 LinkedIn
+        </button>
+        <button onclick="setPlatform('both')" id="plat-both" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+          ✦ Both
+        </button>
+      </div>
+
+      <!-- Quick date presets + language row -->
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Quick presets -->
+        <div class="flex gap-1.5">
+          <button onclick="setDatePreset('today')"    id="preset-today"   class="preset-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">Today</button>
+          <button onclick="setDatePreset('7d')"       id="preset-7d"      class="preset-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">Last 7 days</button>
+          <button onclick="setDatePreset('30d')"      id="preset-30d"     class="preset-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">Last 30 days</button>
+          <button onclick="setDatePreset('custom')"   id="preset-custom"  class="preset-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">Custom</button>
+        </div>
+
+        <!-- Results count + Language -->
+        <div class="ml-auto flex items-center gap-2">
+          <label class="text-xs font-medium text-gray-500 shrink-0">Results</label>
+          <select id="total-results" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <label class="text-xs font-medium text-gray-500 shrink-0">Language</label>
+          <select id="lang" class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+            <option value="">Any</option>
+            <option value="vi" selected>Vietnamese</option>
+            <option value="en">English</option>
+            <option value="th">Thai</option>
+            <option value="id">Indonesian</option>
+            <option value="ms">Malay</option>
+            <option value="zh">Chinese</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+          </select>
+          <button onclick="clearCacheAndSearch()" title="Clear cache and re-fetch"
+            class="text-gray-400 hover:text-red-500 transition p-1.5 rounded-lg">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom date pickers — hidden by default -->
+      <div id="custom-dates" style="display:none" class="gap-3 items-end mt-3 pt-3 border-t border-gray-100">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-500">From</label>
+          <input id="date-from" type="date" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-500">To</label>
+          <input id="date-to" type="date" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status / Progress -->
+  <div class="max-w-4xl mx-auto px-4 mb-2">
+    <div id="status-bar" class="hidden bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
+      <div class="flex items-center gap-2 mb-2">
+        <span id="status-icon" class="text-base">🔍</span>
+        <span id="status-text" class="text-sm text-gray-700 font-medium"></span>
+      </div>
+      <div id="progress-wrap" class="hidden">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-gray-500">Enriching engagement…</span>
+          <span id="progress-count" class="text-xs font-semibold text-blue-600">0 / 0</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+          <div id="progress-bar-inner" class="progress-bar-inner bg-blue-500 h-1.5 rounded-full" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+    <div id="cache-notice" class="hidden text-xs text-gray-400 mt-1 ml-1"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="max-w-4xl mx-auto px-4 pb-10">
+    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+      <div class="flex items-center gap-2 flex-wrap">
+        <div id="results-meta" class="hidden text-xs text-gray-500"></div>
+        <!-- Sort control — hidden until results appear -->
+        <div id="sort-wrap" class="hidden flex items-center gap-1.5">
+          <span class="text-xs text-gray-400">·</span>
+          <span class="text-xs text-gray-400">Sort:</span>
+          <select id="sort-select" onchange="setSortMode(this.value)"
+            class="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-600 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-300 hover:border-gray-300 transition">
+            <option value="default">Default (Google rank)</option>
+            <option value="engagement">🏆 Top Engagement</option>
+          </select>
+          <span id="sort-indicator" class="hidden items-center gap-1 text-xs text-blue-500">
+            <span class="spinner"></span> Updating rankings…
+          </span>
+        </div>
+      </div>
+      <div id="pagination-top" class="hidden flex items-center gap-2">
+        <button id="prev-btn-top" onclick="changePage(-1)"
+          class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+          ← Prev
+        </button>
+        <span id="page-info-top" class="text-xs text-gray-500 px-1"></span>
+        <button id="next-btn-top" onclick="changePage(1)"
+          class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+          Next →
+        </button>
+      </div>
+    </div>
+    <!-- Results | Insights view switcher — hidden until results appear -->
+    <div id="view-tab-bar" class="hidden flex border-b border-gray-200 mb-3">
+      <button onclick="setInsightsView('results')" id="view-tab-results"
+        class="tab-btn active px-4 py-2 text-sm font-medium border-b-2 transition">
+        📰 Results
+      </button>
+      <button onclick="setInsightsView('insights')" id="view-tab-insights"
+        class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
+        📊 Insights
+      </button>
+    </div>
+
+    <!-- Results view wrapper -->
+    <div id="results-view">
+      <!-- Tab bar — only shown when platform='both' -->
+      <div id="tab-bar" class="hidden flex border-b border-gray-200 mb-3">
+        <button onclick="setActiveTab('facebook')" id="tab-facebook" class="tab-btn active px-4 py-2 text-sm font-medium border-b-2 transition">
+          🔵 Facebook (<span id="tab-fb-count">0</span>)
+        </button>
+        <button onclick="setActiveTab('linkedin')" id="tab-linkedin" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
+          🔷 LinkedIn (<span id="tab-li-count">0</span>)
+        </button>
+      </div>
+
+      <div id="results-grid" class="space-y-3"></div>
+      <div id="pagination" class="hidden flex items-center justify-center gap-2 mt-6">
+        <button id="prev-btn" onclick="changePage(-1)"
+          class="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+          ← Previous
+        </button>
+        <span id="page-info" class="text-sm text-gray-500 px-2"></span>
+        <button id="next-btn" onclick="changePage(1)"
+          class="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+          Next →
+        </button>
+      </div>
+    </div><!-- /results-view -->
+
+    <!-- Insights panel -->
+    <div id="insights-panel" class="hidden"></div>
+
+  </div>
+
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-modal" class="hidden fixed inset-0 z-[9998] flex items-center justify-center" onclick="if(event.target===this)closeSettingsModal()">
+  <div class="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 w-full max-w-sm mx-4">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-900">Settings</h2>
+      <button onclick="closeSettingsModal()" class="text-gray-400 hover:text-gray-600 transition p-1 rounded">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Apify API Token</label>
+        <input id="settings-apify-token" type="password" placeholder="apify_api_…"
+          class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300" />
+        <p class="text-xs text-gray-400 mt-1">Used to run Facebook and LinkedIn scrapers.</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Claude API Key</label>
+        <input id="settings-claude-key" type="password" placeholder="sk-ant-…"
+          class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300" />
+        <p class="text-xs text-gray-400 mt-1">Used to generate Insights (topic analysis + title suggestions). Optional.</p>
+      </div>
+      <p id="settings-err" class="hidden text-xs text-red-500">Apify token is required.</p>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="saveSettingsModal()"
+        class="flex-1 bg-blue-600 text-white text-sm font-medium py-2 px-4 rounded-lg hover:bg-blue-700 transition">
+        Save
+      </button>
+      <button onclick="closeSettingsModal()"
+        class="flex-1 bg-gray-100 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg hover:bg-gray-200 transition">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" class="fixed inset-0 z-[9999]" style="display:none;align-items:center;justify-content:center" onclick="lbBgClick(event)">
+  <button id="lb-close" onclick="lbClose()" title="Close (Esc)">✕</button>
+  <button class="lb-nav" id="lb-prev" onclick="lbNav(-1)" title="Previous">&#8249;</button>
+  <img id="lb-img" src="" alt="" onclick="event.stopPropagation()">
+  <button class="lb-nav" id="lb-next" onclick="lbNav(1)" title="Next">&#8250;</button>
+  <div id="lb-counter"></div>
+</div>
+
+<script type="module">
+import Anthropic from 'https://esm.sh/@anthropic-ai/sdk';
+
+const APIFY_BASE   = 'https://api.apify.com/v2';
+const CACHE_TTL_MS = 30 * 60 * 1000;
+const POLL_MS      = 3000;
+
+let state = {
+  keyword:          '',
+  page:             1,
+  dateFrom:         null,
+  dateTo:           null,
+  lang:             'vi',
+  perPage:          10,        // display rows per page (always 10)
+  totalResults:     10,        // how many Google results to fetch total
+  platform:         'facebook', // 'facebook' | 'linkedin' | 'both'
+  activeTab:        'facebook', // only relevant when platform='both'
+  allResults:       [],
+  enrichMap:        {},
+  enrichedPages:    new Set(), // pages whose enrichment has completed
+  enrichingPages:   new Set(), // pages whose enrichment is in progress
+  liResults:        [],
+  liEnrichMap:      {},
+  liEnrichedPages:  new Set(),
+  liEnrichingPages: new Set(),
+  running:          false,
+  sortMode:         'default', // 'default' | 'engagement'
+  insightsView:     'results', // 'results' | 'insights'
+};
+
+let enrichAbort   = null;
+let liEnrichAbort = null;
+
+// Engagement sort state — prevents per-page enrichCurrentPage from aborting a full-run engagement enrichment
+let engagementEnrichingFb = false;
+let engagementEnrichingLi = false;
+let sortRerenderTimer     = null;
+
+// Insights panel state
+let insightsData        = {};   // { facebook: parsedJson, linkedin: parsedJson }
+let insightsEnrichHooks = null; // { onProgress, onDone } — checked at call-time, not capture-time
+let insightsCharts      = [];   // Chart.js instances — destroyed before each re-render
+
+// ── TOKEN ──────────────────────────────────────────────────
+function getToken() { return localStorage.getItem('sl_apify_token') || ''; }
+function saveToken() {
+  const v = document.getElementById('token-input').value.trim();
+  if (!v) { document.getElementById('token-err').classList.remove('hidden'); return; }
+  localStorage.setItem('sl_apify_token', v);
+  document.getElementById('token-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+}
+function showTokenScreen() {
+  document.getElementById('token-input').value = getToken();
+  document.getElementById('token-err').classList.add('hidden');
+  document.getElementById('token-screen').classList.remove('hidden');
+}
+function initAuth() {
+  if (getToken()) document.getElementById('app').classList.remove('hidden');
+  else document.getElementById('token-screen').classList.remove('hidden');
+}
+
+// ── DATE PRESETS ───────────────────────────────────────────
+let _activePreset = null;
+
+function setDatePreset(preset) {
+  _activePreset = preset;
+
+  // Update active button style
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    const isActive = b.id === `preset-${preset}`;
+    b.classList.toggle('border-blue-500', isActive);
+    b.classList.toggle('text-blue-600',   isActive);
+    b.classList.toggle('bg-blue-50',      isActive);
+    b.classList.toggle('border-gray-300', !isActive);
+    b.classList.toggle('text-gray-600',   !isActive);
+  });
+
+  const customDates = document.getElementById('custom-dates');
+  const fromEl = document.getElementById('date-from');
+  const toEl   = document.getElementById('date-to');
+  const today  = new Date();
+  const fmt    = d => d.toISOString().slice(0, 10); // YYYY-MM-DD
+
+  if (preset === 'today') {
+    fromEl.value = fmt(today);
+    toEl.value   = fmt(today);
+    customDates.style.display = 'none';
+  } else if (preset === '7d') {
+    const from = new Date(today); from.setDate(today.getDate() - 6);
+    fromEl.value = fmt(from);
+    toEl.value   = fmt(today);
+    customDates.style.display = 'none';
+  } else if (preset === '30d') {
+    const from = new Date(today); from.setDate(today.getDate() - 29);
+    fromEl.value = fmt(from);
+    toEl.value   = fmt(today);
+    customDates.style.display = 'none';
+  } else if (preset === 'custom') {
+    customDates.style.display = 'flex';
+    // Don't reset values — keep whatever was there
+  }
+}
+
+// ── CACHE ──────────────────────────────────────────────────
+function cacheKey(keyword, dateFrom, dateTo, lang, totalResults, platform) {
+  const prefix = (platform === 'linkedin') ? 'li_cache' : 'fb_cache';
+  const d = [dateFrom || 'x', dateTo || 'x', lang || 'any', totalResults || 10].join('_');
+  return `${prefix}_${keyword.toLowerCase().trim().replace(/\s+/g,'_')}_${d}`;
+}
+function saveCache(keyword, dateFrom, dateTo, lang, totalResults, results, enrichedPages, platform) {
+  try {
+    localStorage.setItem(cacheKey(keyword, dateFrom, dateTo, lang, totalResults, platform),
+      JSON.stringify({ results, enrichedPages: [...enrichedPages], savedAt: Date.now() }));
+  } catch(e) {}
+}
+function loadCache(keyword, dateFrom, dateTo, lang, totalResults, platform) {
+  try {
+    const key = cacheKey(keyword, dateFrom, dateTo, lang, totalResults, platform);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.savedAt > CACHE_TTL_MS) { localStorage.removeItem(key); return null; }
+    return parsed;
+  } catch(e) { return null; }
+}
+function clearCacheForCurrent() {
+  const kw = document.getElementById('kw').value.trim();
+  if (!kw) return;
+  const kwKey = kw.toLowerCase().trim().replace(/\s+/g,'_');
+  ['fb_cache', 'li_cache'].forEach(prefix => {
+    const p = `${prefix}_${kwKey}`;
+    Object.keys(localStorage).filter(k => k.startsWith(p)).forEach(k => localStorage.removeItem(k));
+  });
+}
+
+// ── PLATFORM / TAB UI ──────────────────────────────────────
+function setPlatform(p) {
+  state.platform = p;
+  state.activeTab = (p === 'both') ? 'facebook' : p;
+  // Update button styles
+  ['facebook','linkedin','both'].forEach(id => {
+    const btn = document.getElementById(`plat-${id}`);
+    btn.classList.toggle('active', id === p);
+  });
+  // Show/hide tab bar
+  const tabBar = document.getElementById('tab-bar');
+  tabBar.classList.toggle('hidden', p !== 'both');
+  if (p === 'both') _syncTabBar();
+  // Update search placeholder
+  const kw = document.getElementById('kw');
+  if (p === 'facebook') kw.placeholder = 'Search Facebook posts…';
+  else if (p === 'linkedin') kw.placeholder = 'Search LinkedIn posts…';
+  else kw.placeholder = 'Search posts…';
+}
+function setActiveTab(t) {
+  state.activeTab = t;
+  state.page = 1; // reset to page 1 on tab switch
+  _syncTabBar();
+  renderCurrentPage();
+
+  if (state.sortMode === 'engagement') {
+    // In engagement mode: kick off full-run enrichment for this tab (if not already running)
+    enrichAllForEngagement(t);
+  } else {
+    // Normal lazy enrichment
+    const isLi = t === 'linkedin';
+    const enrichingPgs = isLi ? state.liEnrichingPages : state.enrichingPages;
+    if (enrichingPgs.has(state.page)) {
+      const platformLabel = isLi ? 'LinkedIn' : 'Facebook';
+      setStatus('enriching', `Enriching ${platformLabel} engagement…`);
+      showProgressBar(0, state.perPage);
+    } else {
+      enrichCurrentPage(t);
+    }
+  }
+}
+function _syncTabBar() {
+  ['facebook','linkedin'].forEach(id => {
+    document.getElementById(`tab-${id}`).classList.toggle('active', id === state.activeTab);
+  });
+  document.getElementById('tab-fb-count').textContent = state.allResults.length;
+  document.getElementById('tab-li-count').textContent = state.liResults.length;
+}
+
+// ── APIFY HELPERS ──────────────────────────────────────────
+async function startActor(actorId, input) {
+  const token = getToken();
+  const res = await fetch(`${APIFY_BASE}/acts/${encodeURIComponent(actorId)}/runs?token=${encodeURIComponent(token)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let errDetail = '';
+    try { const j = await res.json(); errDetail = j.error?.message || JSON.stringify(j); } catch { errDetail = await res.text().catch(()=>''); }
+    throw new Error(`Actor start failed: ${res.status} — ${errDetail}`);
+  }
+  return (await res.json()).data;
+}
+async function getRunStatus(runId) {
+  const token = getToken();
+  const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error(`Status fetch failed: ${res.status}`);
+  return (await res.json()).data.status;
+}
+async function waitForRun(runId, onTick) {
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const status = await getRunStatus(runId);
+        if (onTick) onTick(status);
+        if (status === 'SUCCEEDED') { resolve(status); return; }
+        if (['FAILED','ABORTED','TIMED-OUT'].includes(status)) { reject(new Error(`Run ${status}`)); return; }
+        setTimeout(poll, POLL_MS);
+      } catch(e) { reject(e); }
+    };
+    setTimeout(poll, POLL_MS);
+  });
+}
+async function fetchDatasetItems(datasetId, offset = 0, limit = 100) {
+  const token = getToken();
+  const res = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${encodeURIComponent(token)}&offset=${offset}&limit=${limit}&clean=true`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── URL NORMALISE ──────────────────────────────────────────
+function normalizeUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    // Normalise mobile subdomain → www
+    const host = u.hostname.replace(/^m\./, 'www.');
+    return (u.protocol + '//' + host + u.pathname).replace(/\/+$/, '').toLowerCase();
+  } catch { return url.toLowerCase().replace(/\/+$/, ''); }
+}
+
+// Extract a canonical Facebook post key for fallback matching
+// Handles pfbid, numeric /posts/, /permalink/, story_fbid, groups/permalink
+function extractFbPostKey(url) {
+  if (!url) return null;
+  const u = url.toLowerCase();
+  let m;
+  m = u.match(/\/posts\/(pfbid[a-z0-9]+)/); if (m) return 'pfbid:' + m[1];
+  m = u.match(/\/posts\/(\d+)/);             if (m) return 'id:'    + m[1];
+  m = u.match(/\/permalink\/(\d+)/);         if (m) return 'id:'    + m[1];
+  m = u.match(/[?&]story_fbid=(\d+)/);       if (m) return 'id:'    + m[1];
+  m = u.match(/[?&]fbid=(\d+)/);            if (m) return 'fbid:'  + m[1];
+  // Reels: facebook.com/reel/12345 or page/reel/12345 or /reels/12345
+  m = u.match(/\/reels?\/(\d+)/);           if (m) return 'reel:'  + m[1];
+  // Videos: page/videos/12345
+  m = u.match(/\/videos?\/(\d+)/);          if (m) return 'video:' + m[1];
+  // Watch URLs: facebook.com/watch/?v=12345
+  m = u.match(/[?&]v=(\d+)/);              if (m) return 'video:' + m[1];
+  return null;
+}
+
+// Extract page/group context for Level-3 fallback:
+//   "excelketoan/posts", "groups/tuonthidailythue/permalink", etc.
+// Used when Google returns a slug URL and the scraper returns a pfbid URL for the same post.
+function extractFbPageContext(url) {
+  if (!url) return null;
+  // Strip scheme + optional www./m. prefix
+  const u = url.toLowerCase().replace(/^https?:\/\/(www\.|m\.)?facebook\.com\//, '');
+  // [groups/]{page}/{posts|permalink|videos|reel|photo}/...
+  const m = u.match(/^((?:groups\/)?[^/?#]+\/(?:posts|permalink|videos|reel|photo))\//);
+  return m ? m[1] : null;
+}
+
+// Four-level matching — called with the scraped item AND its full text
+//   L1 – normalised URL exact match
+//   L2 – FB post key (pfbid / numeric ID)
+//   L3 – page+type context (only when exactly ONE unmatched candidate)
+//   L4 – text similarity: Google snippet ⊆ scraped full text (handles same-page multi-post)
+// skipEnriched: skip cards already enriched, to avoid double-matching
+function matchEnrichItem(itemUrl, results, skipEnriched = false, itemText = '') {
+  if (!itemUrl && !itemText) return null;
+  const pool = skipEnriched ? results.filter(r => r.state !== 'enriched') : results;
+
+  // L1 – exact normalised URL
+  if (itemUrl) {
+    const norm = normalizeUrl(itemUrl);
+    const l1 = pool.find(r => normalizeUrl(r.url) === norm);
+    if (l1) return l1;
+
+    // L2 – post key (pfbid or numeric ID)
+    const key = extractFbPostKey(itemUrl);
+    if (key) {
+      const l2 = pool.find(r => extractFbPostKey(r.url) === key);
+      if (l2) return l2;
+    }
+
+    // L3 – page+type context (unambiguous: exactly 1 candidate)
+    const ctx = extractFbPageContext(itemUrl);
+    if (ctx) {
+      const candidates = pool.filter(r => extractFbPageContext(r.url) === ctx);
+      if (candidates.length === 1) return candidates[0];
+    }
+  }
+
+  // L4 – text similarity fallbacks (handles URL mismatches AND edited posts)
+  if (itemText && itemText.length > 20) {
+    // NFC-normalise so Vietnamese diacritics compare correctly regardless of encoding source
+    const haystack = itemText.normalize('NFC').toLowerCase().replace(/\s+/g, ' ');
+
+    const l4 = pool.find(r => {
+      // L4a – Google snippet ⊆ scraper full text (works when post body wasn't edited)
+      const snippet = (r.content || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+      if (snippet.length >= 15 && haystack.includes(snippet.slice(0, 80))) return true;
+
+      // L4b – Google title ⊆ scraper full text
+      // Post opening lines are rarely edited; this handles posts whose body changed after indexing.
+      // Strip " | PageName" / " – PageName" suffixes and trailing ellipsis before comparing.
+      const titleClean = (r.title || '').normalize('NFC').toLowerCase()
+        .replace(/\s*[|–—]\s+.*$/, '')   // drop " | VinFast Auto" etc.
+        .replace(/[.…]+$/, '')            // drop trailing ellipsis / dots
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (titleClean.length >= 20 && haystack.includes(titleClean.slice(0, 60))) return true;
+
+      return false;
+    });
+    if (l4) return l4;
+  }
+
+  return null;
+}
+
+// ── LANG DETECT ────────────────────────────────────────────
+const LANG_PATTERNS = {
+  vi: /[àáâãèéêìíòóôõùúýăđơưạảấầẩẫậắặẵặảẻẽẹếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i,
+  zh: /[\u4e00-\u9fff]/, ja: /[\u3040-\u30ff]/, ko: /[\uac00-\ud7af]/, th: /[\u0e00-\u0e7f]/,
+};
+function detectLang(text) {
+  if (!text) return '';
+  for (const [lang, re] of Object.entries(LANG_PATTERNS)) if (re.test(text)) return lang;
+  return 'en';
+}
+
+// ── GOOGLE SEARCH ──────────────────────────────────────────
+// Streams Google results page-by-page as they arrive.
+// onNewResults(organicBatch) is called each time new results are ready — no waiting for full run.
+async function runGoogleSearch(keyword, totalResults, dateFrom, dateTo, lang, onStatus, onNewResults) {
+  if (onStatus) onStatus('Starting Google search…');
+
+  const input = {
+    queries:                  keyword,
+    site:                     'facebook.com',
+    countryCode:              'vn',
+    languageCode:             lang || 'vi',
+    resultsPerPage:           10,
+    maxPagesPerQuery:         Math.ceil(totalResults / 10),
+    mobileResults:            false,
+    includeUnfilteredResults: false,
+    saveHtml:                 false,
+    saveHtmlToKeyValueStore:  false,
+    focusOnPaidAds:           false,
+    includeIcons:             false,
+  };
+  if (dateFrom) input.afterDate  = dateFrom;
+  if (dateTo)   input.beforeDate = dateTo;
+
+  const run = await startActor('apify/google-search-scraper', input);
+  if (onStatus) onStatus('Google search: RUNNING…');
+
+  const filterFb = r => {
+    const u = (r.url || r.link || '').toLowerCase();
+    return u.includes('facebook.com') && !u.includes('facebook.com/ads') && !u.includes('l.facebook.com');
+  };
+
+  let seenItems = 0;
+
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        // Fetch any new dataset items since last poll
+        const newItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 20);
+        if (newItems.length > 0) {
+          seenItems += newItems.length;
+          let organic = [];
+          for (const item of newItems) organic = organic.concat(item.organicResults || item.organic || []);
+          organic = organic.filter(filterFb);
+          if (organic.length > 0 && onNewResults) onNewResults(organic);
+        }
+
+        const status = await getRunStatus(run.id);
+        if (onStatus) onStatus(`Google search: ${status}…`);
+
+        if (['SUCCEEDED', 'FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
+          // Final sweep to catch any items not yet seen
+          const finalItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 500);
+          if (finalItems.length > 0) {
+            let organic = [];
+            for (const item of finalItems) organic = organic.concat(item.organicResults || item.organic || []);
+            organic = organic.filter(filterFb);
+            if (organic.length > 0 && onNewResults) onNewResults(organic);
+          }
+          resolve();
+          return;
+        }
+
+        setTimeout(poll, POLL_MS);
+      } catch(e) { reject(e); }
+    };
+    setTimeout(poll, POLL_MS);
+  });
+}
+
+function normalizeGoogleResult(r, idx) {
+  const url = r.url || r.link || '';
+  const date = r.date || r.publishedAt || null;
+  let publishedAt = null;
+  if (date) { const d = new Date(date); if (!isNaN(d)) publishedAt = d.toISOString(); }
+  return {
+    id: `g-${idx}-${normalizeUrl(url)}`, url,
+    title: r.title || '', content: r.description || r.snippet || '',
+    source: r.displayedUrl || url, publishedAt,
+    detectedLang: detectLang((r.title||'') + ' ' + (r.description||'')),
+    platform: 'facebook',
+    likes: null, comments: null, shares: null, state: 'pending',
+  };
+}
+function normalizeLinkedInResult(r, idx) {
+  const url = r.url || r.link || '';
+  const date = r.date || r.publishedAt || null;
+  let publishedAt = null;
+  if (date) { const d = new Date(date); if (!isNaN(d)) publishedAt = d.toISOString(); }
+  return {
+    id: `li-${idx}-${url}`, url,
+    title: r.title || '', content: r.description || r.snippet || '',
+    source: r.displayedUrl || url, publishedAt,
+    detectedLang: detectLang((r.title||'') + ' ' + (r.description||'')),
+    platform: 'linkedin',
+    likes: null, comments: null, shares: null, state: 'pending',
+  };
+}
+
+// ── LINKEDIN SEARCH ────────────────────────────────────────
+async function runLinkedInSearch(keyword, totalResults, dateFrom, dateTo, lang, onStatus, onNewResults) {
+  if (onStatus) onStatus('Starting LinkedIn search…');
+  const input = {
+    queries:                  keyword,
+    site:                     'linkedin.com',
+    countryCode:              'vn',
+    languageCode:             lang || 'vi',
+    resultsPerPage:           10,
+    maxPagesPerQuery:         Math.ceil(totalResults / 10),
+    mobileResults:            false,
+    includeUnfilteredResults: false,
+    saveHtml:                 false,
+    saveHtmlToKeyValueStore:  false,
+    focusOnPaidAds:           false,
+    includeIcons:             false,
+  };
+  if (dateFrom) input.afterDate  = dateFrom;
+  if (dateTo)   input.beforeDate = dateTo;
+
+  const run = await startActor('apify/google-search-scraper', input);
+  if (onStatus) onStatus('LinkedIn search: RUNNING…');
+
+  const filterLi = r => {
+    const u = (r.url || r.link || '').toLowerCase();
+    const ok = u.includes('linkedin.com')
+      && !u.includes('linkedin.com/jobs')
+      && !u.includes('linkedin.com/company/')
+      && !u.includes('linkedin.com/in/')
+      && !u.includes('linkedin.com/school/')
+      && !u.includes('linkedin.com/learning/');
+    if (!ok && u.includes('linkedin.com')) console.log('[LI Filter] BLOCKED:', u);
+    return ok;
+  };
+
+  let seenItems = 0;
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const newItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 20);
+        if (newItems.length > 0) {
+          seenItems += newItems.length;
+          let organic = [];
+          for (const item of newItems) organic = organic.concat(item.organicResults || item.organic || []);
+          const beforeFilter = organic.length;
+          organic = organic.filter(filterLi);
+          console.log(`[LI Search] ${beforeFilter} organic items → ${organic.length} after LinkedIn filter`);
+          if (organic.length > 0) console.log('[LI Search] sample URLs:', organic.slice(0,3).map(r=>r.url||r.link));
+          if (organic.length > 0 && onNewResults) onNewResults(organic);
+        }
+        const status = await getRunStatus(run.id);
+        if (onStatus) onStatus(`LinkedIn search: ${status}…`);
+        if (['SUCCEEDED','FAILED','ABORTED','TIMED-OUT'].includes(status)) {
+          const finalItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 500);
+          if (finalItems.length > 0) {
+            let organic = [];
+            for (const item of finalItems) organic = organic.concat(item.organicResults || item.organic || []);
+            organic = organic.filter(filterLi);
+            if (organic.length > 0 && onNewResults) onNewResults(organic);
+          }
+          resolve(); return;
+        }
+        setTimeout(poll, POLL_MS);
+      } catch(e) { reject(e); }
+    };
+    setTimeout(poll, POLL_MS);
+  });
+}
+
+// ── ENRICHMENT ─────────────────────────────────────────────
+async function enrichProgressively(results, onProgress, onCardUpdate, onDone) {
+  if (enrichAbort) enrichAbort.abort = true;
+  const abort = { abort: false };
+  enrichAbort = abort;
+
+  const fbUrls = results.map(r => r.url).filter(u => u && u.includes('facebook.com'));
+  if (fbUrls.length === 0) { if (onDone) onDone(); return; }
+
+  let run, datasetId;
+  try {
+    // Note: do NOT pass date filters here — we're fetching specific post URLs,
+    // so we always want their engagement data regardless of publish date.
+    const input = {
+      startUrls:    fbUrls.map(url => ({ url })),
+      resultsLimit: fbUrls.length,
+      captionText:  false,
+    };
+    console.log('[Enrichment] Starting actor with', fbUrls.length, 'URLs:', fbUrls);
+    const r = await startActor('apify/facebook-posts-scraper', input);
+    run = r; datasetId = r.defaultDatasetId;
+    console.log('[Enrichment] Run started, datasetId:', datasetId);
+  } catch(e) {
+    console.error('[Enrichment] Failed to start actor:', e);
+    results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+    if (onDone) onDone(0);
+    return;
+  }
+
+  let seenCount = 0, enrichedCount = 0;
+  const total = fbUrls.length;
+
+  const poll = async () => {
+    if (abort.abort) {
+      // Enrichment was cancelled (new page started). Mark any remaining pending as failed
+      // so users see the Retry button instead of a stuck spinner.
+      results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+      if (onDone) onDone(enrichedCount);
+      return;
+    }
+    try {
+      const newItems = await fetchDatasetItems(datasetId, seenCount, 50);
+      console.log('[Enrichment] Poll: got', newItems.length, 'new items (offset', seenCount, ')');
+      seenCount += newItems.length;
+      for (const item of newItems) {
+        if (abort.abort) break; // break (not return) so cleanup still runs below
+        const itemUrl = item.url || item.postUrl || '';
+        console.log('[Enrichment] Item url:', itemUrl, '| likes:', item.likes, 'comments:', item.comments, 'shares:', item.shares);
+        const matched = matchEnrichItem(itemUrl, results, true, item.text || ''); // skipEnriched + text
+        if (matched) {
+          // If the scraper returned only the URL with no data, it failed to fetch this post
+          const hasData = item.likes != null || item.comments != null || item.shares != null || item.text;
+          if (hasData) {
+            matched.likes    = item.likes    ?? null;
+            matched.comments = item.comments ?? null;
+            matched.shares   = item.shares   ?? null;
+            if (item.text)   matched.fullText = item.text;
+            if (item.media)  matched.media    = item.media;
+            matched.state = 'enriched'; enrichedCount++;
+            console.log('[Enrichment] ✓ Matched:', itemUrl, '→', matched.url);
+          } else {
+            matched.state = 'failed';
+            console.warn('[Enrichment] ✗ Matched but empty data (scraper error):', itemUrl);
+          }
+          if (onCardUpdate) onCardUpdate(matched);
+        } else {
+          console.warn('[Enrichment] ✗ No match for:', itemUrl,
+            '\n  ctx:', extractFbPageContext(itemUrl),
+            '\n  key:', extractFbPostKey(itemUrl),
+            '\n  pool ctxs:', results.filter(r=>r.state!=='enriched').map(r=>extractFbPageContext(r.url)));
+        }
+      }
+      if (onProgress) onProgress(enrichedCount, total);
+
+      if (abort.abort) {
+        results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+        if (onDone) onDone(enrichedCount);
+        return;
+      }
+
+      const status = await getRunStatus(run.id);
+      if (abort.abort) {
+        results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+        if (onDone) onDone(enrichedCount);
+        return;
+      }
+
+      if (['SUCCEEDED','FAILED','ABORTED','TIMED-OUT','TIMING-OUT'].includes(status)) {
+        console.log('[Enrichment] Run', status, '- final sweep from offset', seenCount);
+        if (status === 'SUCCEEDED' || status === 'TIMED-OUT' || status === 'TIMING-OUT') {
+          const finalItems = await fetchDatasetItems(datasetId, seenCount, 200);
+          console.log('[Enrichment] Final sweep:', finalItems.length, 'items');
+          for (const item of finalItems) {
+            // No abort check inside final sweep — we're at terminal state, always finish cleanup
+            const itemUrl = item.url || item.postUrl || '';
+            const matched = matchEnrichItem(itemUrl, results, true, item.text || ''); // skipEnriched + text
+            if (matched) {
+              const hasData = item.likes != null || item.comments != null || item.shares != null || item.text;
+              if (hasData) {
+                matched.likes    = item.likes    ?? null;
+                matched.comments = item.comments ?? null;
+                matched.shares   = item.shares   ?? null;
+                if (item.text)   matched.fullText = item.text;
+                if (item.media)  matched.media    = item.media;
+                matched.state = 'enriched'; enrichedCount++;
+                console.log('[Enrichment] ✓ Final match:', itemUrl);
+              } else {
+                matched.state = 'failed';
+                console.warn('[Enrichment] ✗ Final match but empty data:', itemUrl);
+              }
+              if (onCardUpdate) onCardUpdate(matched);
+            }
+          }
+        }
+        results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+        if (onProgress) onProgress(enrichedCount, total);
+        if (onDone) onDone(enrichedCount);
+        return;
+      }
+      if (enrichedCount >= total) { if (onDone) onDone(enrichedCount); return; }
+      setTimeout(poll, POLL_MS);
+    } catch(e) { if (!abort.abort) setTimeout(poll, POLL_MS * 2); }
+  };
+  setTimeout(poll, POLL_MS);
+}
+
+// ── LINKEDIN ENRICHMENT ────────────────────────────────────
+async function enrichLiProgressively(results, onProgress, onCardUpdate, onDone) {
+  console.log('[enrichLiProgressively] called with', results.length, 'results');
+  if (liEnrichAbort) liEnrichAbort.abort = true;
+  const abort = { abort: false };
+  liEnrichAbort = abort;
+
+  const liUrls = results.map(r => r.url).filter(u => u && u.includes('linkedin.com'));
+  console.log('[enrichLiProgressively] liUrls count:', liUrls.length, '| sample URLs:', liUrls.slice(0,3));
+  if (liUrls.length === 0) {
+    console.warn('[enrichLiProgressively] NO LINKEDIN URLS — all result URLs:', results.map(r=>r.url));
+    if (onDone) onDone(); return;
+  }
+
+  let run, datasetId;
+  try {
+    // Actor input: datadoping/linkedin-bulk-post-scraper uses "post_urls" (underscore)
+    console.log('[enrichLiProgressively] starting actor with', liUrls.length, 'URLs');
+    const r = await startActor('datadoping/linkedin-bulk-post-scraper', { post_urls: liUrls });
+    run = r; datasetId = r.defaultDatasetId;
+    console.log('[enrichLiProgressively] actor started, runId:', run.id, 'datasetId:', datasetId);
+  } catch(e) {
+    console.error('[enrichLiProgressively] startActor FAILED:', e.message);
+    setStatus('error', `LinkedIn enrichment error: ${e.message}`);
+    results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+    if (onDone) onDone(0); return;
+  }
+
+  const normLiUrl = u => {
+    try { const p = new URL(u); return (p.protocol+'//'+p.hostname+p.pathname).replace(/\/+$/,'').toLowerCase(); }
+    catch { return u.toLowerCase().replace(/\/+$/,''); }
+  };
+  const matchLiItem = (itemUrl, itemText) => {
+    const pool = results.filter(r => r.state !== 'enriched');
+    // Primary: match by actor's `input` field (the URL we submitted)
+    if (itemUrl) { const l1 = pool.find(r => normLiUrl(r.url) === normLiUrl(itemUrl)); if (l1) return l1; }
+    // Fallback: fuzzy text match against snippet / title
+    if (itemText && itemText.length > 20) {
+      const haystack = itemText.normalize('NFC').toLowerCase().replace(/\s+/g,' ');
+      const l4 = pool.find(r => {
+        const snippet = (r.content||'').normalize('NFC').toLowerCase().replace(/\s+/g,' ').trim();
+        if (snippet.length >= 15 && haystack.includes(snippet.slice(0,80))) return true;
+        const titleClean = (r.title||'').normalize('NFC').toLowerCase()
+          .replace(/\s*[|–—]\s+.*$/,'').replace(/[.…]+$/,'').replace(/\s+/g,' ').trim();
+        if (titleClean.length >= 20 && haystack.includes(titleClean.slice(0,60))) return true;
+        return false;
+      });
+      if (l4) return l4;
+    }
+    return null;
+  };
+  const applyLiItem = (item, matched) => {
+    // Field names from datadoping/linkedin-bulk-post-scraper actual output
+    const text = item.post_headline || item.text || item.content || '';
+    const hasData = item.like_count != null || item.comments_count != null || text;
+    if (hasData) {
+      matched.likes    = item.like_count    ?? null;
+      matched.comments = item.comments_count ?? null;
+      matched.shares   = null; // actor does not return shares
+      if (text) matched.fullText = text;
+      if (item.image)        matched.liImage    = item.image;
+      if (item.author_name)  matched.authorName  = item.author_name;
+      if (item.author_image) matched.authorImage = item.author_image;
+      if (item.followers != null) matched.followers = item.followers;
+      matched.state = 'enriched'; return true;
+    } else { matched.state = 'failed'; return false; }
+  };
+
+  let seenCount = 0, enrichedCount = 0;
+  const total = liUrls.length;
+
+  const poll = async () => {
+    if (abort.abort) {
+      results.forEach(r => { if (r.state==='pending') { r.state='failed'; if (onCardUpdate) onCardUpdate(r); }});
+      if (onDone) onDone(enrichedCount); return;
+    }
+    try {
+      const newItems = await fetchDatasetItems(datasetId, seenCount, 50);
+      seenCount += newItems.length;
+      for (const item of newItems) {
+        if (abort.abort) break;
+        const itemUrl = item.input || item.url || item.postUrl || item.postURL || '';
+        const itemText = item.post_headline || item.text || item.content || '';
+        const matched = matchLiItem(itemUrl, itemText);
+        if (matched) { const ok = applyLiItem(item, matched); if (ok) enrichedCount++; if (onCardUpdate) onCardUpdate(matched); }
+      }
+      if (onProgress) onProgress(enrichedCount, total);
+      if (abort.abort) {
+        results.forEach(r => { if (r.state==='pending') { r.state='failed'; if (onCardUpdate) onCardUpdate(r); }});
+        if (onDone) onDone(enrichedCount); return;
+      }
+      const status = await getRunStatus(run.id);
+      if (abort.abort) {
+        results.forEach(r => { if (r.state==='pending') { r.state='failed'; if (onCardUpdate) onCardUpdate(r); }});
+        if (onDone) onDone(enrichedCount); return;
+      }
+      if (['SUCCEEDED','FAILED','ABORTED','TIMED-OUT','TIMING-OUT'].includes(status)) {
+        if (status==='SUCCEEDED'||status==='TIMED-OUT'||status==='TIMING-OUT') {
+          const finalItems = await fetchDatasetItems(datasetId, seenCount, 200);
+          for (const item of finalItems) {
+            const itemUrl = item.input || item.url || item.postUrl || item.postURL || '';
+            const itemText = item.post_headline || item.text || item.content || '';
+            const matched = matchLiItem(itemUrl, itemText);
+            if (matched) { const ok = applyLiItem(item, matched); if (ok) enrichedCount++; if (onCardUpdate) onCardUpdate(matched); }
+          }
+        }
+        results.forEach(r => { if (r.state==='pending') { r.state='failed'; if (onCardUpdate) onCardUpdate(r); }});
+        if (onProgress) onProgress(enrichedCount, total);
+        if (onDone) onDone(enrichedCount); return;
+      }
+      if (enrichedCount >= total) { if (onDone) onDone(enrichedCount); return; }
+      setTimeout(poll, POLL_MS);
+    } catch(e) { if (!abort.abort) setTimeout(poll, POLL_MS*2); }
+  };
+  setTimeout(poll, POLL_MS);
+}
+
+// ── SORT BY ENGAGEMENT ─────────────────────────────────────
+function setSortMode(mode) {
+  state.sortMode = mode;
+  state.page = 1; // reset to first page whenever sort changes
+  renderCurrentPage();
+
+  if (mode === 'engagement') {
+    // Determine which platform(s) to background-enrich
+    const activePlat = state.platform === 'both' ? state.activeTab : state.platform;
+    enrichAllForEngagement(activePlat);
+    if (state.platform === 'both') {
+      const other = activePlat === 'facebook' ? 'linkedin' : 'facebook';
+      enrichAllForEngagement(other);
+    }
+  } else {
+    // Back to default — hide indicator, nothing more needed
+    hideSortIndicator();
+  }
+}
+
+function enrichAllForEngagement(platform) {
+  const isLi = platform === 'linkedin';
+  // Skip if a full-run engagement enrichment is already in progress for this platform
+  if (isLi && engagementEnrichingLi) return;
+  if (!isLi && engagementEnrichingFb) return;
+
+  const allResults = isLi ? state.liResults : state.allResults;
+  const pending = allResults.filter(r => r.state === 'pending');
+  if (pending.length === 0) return; // everything already enriched
+
+  // Mark as in-progress so enrichCurrentPage won't abort this actor run
+  if (isLi) engagementEnrichingLi = true;
+  else       engagementEnrichingFb = true;
+
+  showSortIndicator();
+
+  const onCardUpdate = (result) => {
+    updateCardInDOM(result);
+    // Debounced re-render so the live leaderboard updates smoothly
+    if (state.sortMode === 'engagement') {
+      clearTimeout(sortRerenderTimer);
+      sortRerenderTimer = setTimeout(() => renderCurrentPage(), 600);
+    }
+  };
+
+  const onProgress = (done, total) => {
+    if (state.sortMode === 'engagement') updateSortIndicator(done, total);
+    // Insights hook — checked at call-time so hooks set after enrichment starts also fire
+    if (insightsEnrichHooks?.onProgress) insightsEnrichHooks.onProgress(done, total);
+  };
+
+  const onDone = () => {
+    if (isLi) engagementEnrichingLi = false;
+    else       engagementEnrichingFb = false;
+    hideSortIndicator();
+    if (state.sortMode === 'engagement') {
+      clearTimeout(sortRerenderTimer);
+      renderCurrentPage();
+    }
+    // Insights hook
+    if (insightsEnrichHooks?.onDone) { insightsEnrichHooks.onDone(); insightsEnrichHooks = null; }
+  };
+
+  if (isLi) enrichLiProgressively(pending, onProgress, onCardUpdate, onDone);
+  else       enrichProgressively(pending, onProgress, onCardUpdate, onDone);
+}
+
+// ── SETTINGS MODAL ─────────────────────────────────────────
+function getClaudeKey() { return localStorage.getItem('sl_claude_key') || ''; }
+function saveClaudeKey(k) { if (k) localStorage.setItem('sl_claude_key', k); }
+
+function openSettingsModal() {
+  document.getElementById('settings-apify-token').value = getToken();
+  document.getElementById('settings-claude-key').value  = getClaudeKey();
+  document.getElementById('settings-err').classList.add('hidden');
+  document.getElementById('settings-modal').classList.remove('hidden');
+}
+function closeSettingsModal() {
+  document.getElementById('settings-modal').classList.add('hidden');
+}
+function saveSettingsModal() {
+  const apify  = document.getElementById('settings-apify-token').value.trim();
+  const claude = document.getElementById('settings-claude-key').value.trim();
+  if (!apify) { document.getElementById('settings-err').classList.remove('hidden'); return; }
+  localStorage.setItem('sl_apify_token', apify);
+  saveClaudeKey(claude);
+  closeSettingsModal();
+  // If Insights panel is open in state-D (waiting for key), re-render it
+  if (state.insightsView === 'insights') renderInsightsPanel();
+}
+
+// ── INSIGHTS PANEL ─────────────────────────────────────────
+function insightsPlatform() {
+  return state.platform === 'both' ? state.activeTab : state.platform;
+}
+
+function setInsightsView(v) {
+  state.insightsView = v;
+  const isInsights = v === 'insights';
+  document.getElementById('view-tab-results').classList.toggle('active', !isInsights);
+  document.getElementById('view-tab-insights').classList.toggle('active', isInsights);
+  document.getElementById('results-view').classList.toggle('hidden', isInsights);
+  document.getElementById('insights-panel').classList.toggle('hidden', !isInsights);
+  if (isInsights) renderInsightsPanel();
+}
+
+function renderInsightsPanel() {
+  const panel = document.getElementById('insights-panel');
+  if (!panel || state.insightsView !== 'insights') return;
+
+  const plat = insightsPlatform();
+  const isLi = plat === 'linkedin';
+  const results = isLi ? state.liResults : state.allResults;
+  const total   = results.length;
+
+  // State A — no results
+  if (total === 0) {
+    panel.innerHTML = `<div class="insight-section text-center py-8 text-gray-400">
+      <div class="text-3xl mb-2">🔍</div>
+      <p class="text-sm">Run a search first to generate insights.</p>
+    </div>`;
+    return;
+  }
+
+  const enriched = results.filter(r => r.state === 'enriched').length;
+  const pending  = results.filter(r => r.state === 'pending').length;
+  const alreadyRunning = isLi ? engagementEnrichingLi : engagementEnrichingFb;
+
+  // Retroactively attach hooks if enrichment is already running (e.g. triggered from Sort)
+  if (alreadyRunning && !insightsEnrichHooks) {
+    insightsEnrichHooks = {
+      onProgress: (done, tot) => updateInsightsPanelProgress(done, tot),
+      onDone: () => renderInsightsPanel(),
+    };
+  }
+
+  const inProgress = alreadyRunning || !!insightsEnrichHooks;
+
+  // State C — enrichment in progress
+  if (inProgress && pending > 0) {
+    panel.innerHTML = `<div class="insight-section">
+      <h3>📊 Insights</h3>
+      <p class="text-xs text-gray-500 mb-3">Loading engagement data for all posts…</p>
+      <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+        <span id="insights-prog-text">Enriching… ${enriched} / ${total} posts done</span>
+      </div>
+      <div class="insights-progress-bar"><div id="insights-prog-fill" class="insights-progress-fill" style="width:${Math.round(enriched/total*100)}%"></div></div>
+    </div>`;
+    return;
+  }
+
+  // State B — enrichment not started, pending items exist
+  if (pending > 0 && !inProgress) {
+    panel.innerHTML = `<div class="insight-section text-center py-6">
+      <div class="text-2xl mb-2">⚡</div>
+      <p class="text-sm font-medium text-gray-700 mb-1">Full engagement data needed</p>
+      <p class="text-xs text-gray-400 mb-4">Load engagement metrics for all ${total} posts to generate insights.</p>
+      <button onclick="triggerInsightsEnrichment()"
+        class="inline-flex items-center gap-2 bg-blue-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+        ⚡ Load All Engagement Data
+      </button>
+      <div id="insights-prog-wrap" class="hidden mt-4">
+        <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span id="insights-prog-text">Starting…</span>
+        </div>
+        <div class="insights-progress-bar"><div id="insights-prog-fill" class="insights-progress-fill" style="width:0%"></div></div>
+      </div>
+    </div>`;
+    return;
+  }
+
+  // All enriched — check for Claude data (State D or E)
+  if (insightsData[plat]) {
+    // State E — data ready
+    renderInsightsReady(plat, insightsData[plat]);
+    return;
+  }
+
+  // State D — enriched, no Claude data yet
+  if (!getClaudeKey()) {
+    panel.innerHTML = `<div class="insight-section text-center py-6">
+      <div class="text-2xl mb-2">🔑</div>
+      <p class="text-sm font-medium text-gray-700 mb-1">Claude API key required</p>
+      <p class="text-xs text-gray-400 mb-4">Add your Claude API key in Settings to generate AI-powered insights.</p>
+      <button onclick="openSettingsModal()"
+        class="inline-flex items-center gap-2 bg-gray-800 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-900 transition">
+        ⚙️ Open Settings
+      </button>
+    </div>`;
+    return;
+  }
+
+  // Key exists — show generate button
+  const enrichedCount = enriched;
+  panel.innerHTML = `<div class="insight-section text-center py-6">
+    <div class="text-2xl mb-2">✨</div>
+    <p class="text-sm font-medium text-gray-700 mb-1">Ready to generate insights</p>
+    <p class="text-xs text-gray-400 mb-4">${enrichedCount} posts enriched. Claude will analyze topics and suggest titles.</p>
+    <button onclick="callClaudeForInsights('${plat}')"
+      class="inline-flex items-center gap-2 bg-purple-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-purple-700 transition">
+      ✨ Generate Insights
+    </button>
+  </div>`;
+}
+
+function triggerInsightsEnrichment() {
+  const plat = insightsPlatform();
+  // Set hooks before calling enrichAllForEngagement
+  insightsEnrichHooks = {
+    onProgress: (done, tot) => updateInsightsPanelProgress(done, tot),
+    onDone: () => renderInsightsPanel(),
+  };
+  enrichAllForEngagement(plat);
+  // Show progress state immediately
+  renderInsightsPanel();
+}
+
+function updateInsightsPanelProgress(done, total) {
+  if (state.insightsView !== 'insights') return;
+  const fill = document.getElementById('insights-prog-fill');
+  const text = document.getElementById('insights-prog-text');
+  const wrap = document.getElementById('insights-prog-wrap');
+  if (fill) fill.style.width = (total > 0 ? Math.round(done / total * 100) : 0) + '%';
+  if (text) text.textContent = `Enriching… ${done} / ${total} posts done`;
+  if (wrap) wrap.classList.remove('hidden');
+}
+
+function destroyCharts() {
+  insightsCharts.forEach(c => { try { c.destroy(); } catch(e) {} });
+  insightsCharts = [];
+}
+
+function renderInsightsReady(plat, data) {
+  const panel = document.getElementById('insights-panel');
+  if (!panel) return;
+  destroyCharts();
+
+  const topEng  = (data.top_by_engagement || []).slice(0, 5);
+  const topComm = (data.top_by_comments   || []).slice(0, 5);
+  const topics  = data.topics || [];
+  const suggestions = data.title_suggestions || [];
+
+  // Truncate long titles for chart labels
+  const truncLabel = s => s && s.length > 40 ? s.slice(0, 38) + '…' : (s || '');
+
+  const chartsHtml = `
+    <div class="insight-section">
+      <h3>🏆 Top 5 by Total Engagement</h3>
+      <div class="insights-chart-wrap"><canvas id="chart-engagement"></canvas></div>
+    </div>
+    <div class="insight-section">
+      <h3>💬 Top 5 by Comments</h3>
+      <div class="insights-chart-wrap"><canvas id="chart-comments"></canvas></div>
+    </div>`;
+
+  const topicsHtml = topics.length ? `
+    <div class="insight-section">
+      <h3>🗂️ Topic Breakdown</h3>
+      ${topics.map(t => `
+        <div class="topic-item">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-gray-800">${escHtml(t.name || '')}</p>
+            ${t.description ? `<p class="text-xs text-gray-400 mt-0.5">${escHtml(t.description)}</p>` : ''}
+          </div>
+          <div class="flex items-center gap-2 shrink-0 ml-2">
+            <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">${t.post_count || 0} posts</span>
+            ${t.total_engagement != null ? `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">${fmtNum(t.total_engagement)} eng</span>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+
+  const suggestionsHtml = `
+    <div class="insight-section" id="suggestions-section">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="!mb-0">💡 Title Suggestions</h3>
+        <button onclick="refreshTitleSuggestions('${plat}')"
+          class="text-xs text-blue-600 hover:text-blue-800 transition flex items-center gap-1" id="refresh-suggestions-btn">
+          🔄 Refresh
+        </button>
+      </div>
+      <div id="suggestions-list">
+        ${suggestions.map(s => `
+          <div class="suggestion-item">
+            <p class="text-sm font-medium text-gray-800">${escHtml(s.title || '')}</p>
+            ${s.rationale ? `<p class="text-xs text-gray-400 mt-0.5">${escHtml(s.rationale)}</p>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  panel.innerHTML = chartsHtml + topicsHtml + suggestionsHtml;
+
+  // Build charts after DOM is ready
+  setTimeout(() => buildCharts(topEng, topComm), 0);
+}
+
+function buildCharts(topEng, topComm) {
+  destroyCharts();
+  const chartDefaults = {
+    type: 'bar',
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } },
+      },
+    },
+  };
+
+  const truncLabel = s => s && s.length > 42 ? s.slice(0, 40) + '…' : (s || '');
+
+  const cvEng  = document.getElementById('chart-engagement');
+  const cvComm = document.getElementById('chart-comments');
+
+  if (cvEng && topEng.length) {
+    insightsCharts.push(new Chart(cvEng, {
+      ...chartDefaults,
+      data: {
+        labels: topEng.map(p => truncLabel(p.title || '')),
+        datasets: [{ data: topEng.map(p => p.engagement || 0), backgroundColor: '#3b82f6', borderRadius: 4 }],
+      },
+    }));
+  }
+  if (cvComm && topComm.length) {
+    insightsCharts.push(new Chart(cvComm, {
+      ...chartDefaults,
+      data: {
+        labels: topComm.map(p => truncLabel(p.title || '')),
+        datasets: [{ data: topComm.map(p => p.comments || 0), backgroundColor: '#8b5cf6', borderRadius: 4 }],
+      },
+    }));
+  }
+}
+
+async function callClaudeForInsights(plat) {
+  const panel = document.getElementById('insights-panel');
+  if (!panel) return;
+  // Cached — don't re-call
+  if (insightsData[plat]) { renderInsightsReady(plat, insightsData[plat]); return; }
+
+  const isLi   = plat === 'linkedin';
+  const results = (isLi ? state.liResults : state.allResults).filter(r => r.state === 'enriched');
+
+  if (results.length === 0) { renderInsightsPanel(); return; }
+
+  panel.innerHTML = `<div class="insight-section text-center py-8">
+    <span class="spinner" style="width:20px;height:20px;border-width:3px"></span>
+    <p class="text-sm text-gray-500 mt-3">Analyzing ${results.length} posts with Claude…</p>
+  </div>`;
+
+  const posts = results.map(r => ({
+    title:    (r.title || '').slice(0, 120),
+    content:  (r.content || '').slice(0, 100),
+    likes:    r.likes    ?? 0,
+    comments: r.comments ?? 0,
+    shares:   r.shares   ?? 0,
+  }));
+
+  const prompt = `You are analyzing social media posts. Given these posts (title, content snippet, engagement metrics), return ONLY valid JSON — no markdown fences, no explanation. The JSON must exactly match this structure:
+{
+  "topics": [{"name":"string","post_count":number,"total_engagement":number,"description":"string"}],
+  "top_by_engagement": [{"title":"string","engagement":number}],
+  "top_by_comments": [{"title":"string","comments":number}],
+  "title_suggestions": [{"title":"string","rationale":"string"}]
+}
+Rules:
+- topics: 3-6 distinct content themes you observe
+- top_by_engagement: exactly 5 items sorted by likes+comments+shares descending
+- top_by_comments: exactly 5 items sorted by comments descending
+- title_suggestions: exactly 5 original post title ideas inspired by what works in this dataset
+
+Posts data:
+${JSON.stringify(posts)}`;
+
+  if (!getClaudeKey()) { renderInsightsPanel(); return; }
+
+  try {
+    const client = new Anthropic({ apiKey: getClaudeKey(), dangerouslyAllowBrowser: true });
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = response.content?.[0]?.text || '';
+    // Strip markdown fences if present
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(clean);
+    insightsData[plat] = parsed;
+    renderInsightsReady(plat, parsed);
+  } catch(e) {
+    const isAuth = e.status === 401 || (e.message || '').includes('authentication');
+    panel.innerHTML = `<div class="insight-section text-center py-6">
+      <div class="text-2xl mb-2">⚠️</div>
+      <p class="text-sm font-medium text-gray-700 mb-1">Failed to generate insights</p>
+      <p class="text-xs text-gray-400 mb-4">${isAuth
+        ? 'Invalid or missing Claude API key. Please add your key in Settings.'
+        : escHtml(e.message)}</p>
+      ${isAuth
+        ? `<button onclick="openSettingsModal()"
+            class="inline-flex items-center gap-2 bg-gray-800 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-900 transition">
+            ⚙️ Open Settings
+          </button>`
+        : `<button onclick="callClaudeForInsights('${plat}')"
+            class="inline-flex items-center gap-2 bg-purple-600 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-purple-700 transition">
+            Try again
+          </button>`}
+    </div>`;
+  }
+}
+
+async function refreshTitleSuggestions(plat) {
+  const listEl = document.getElementById('suggestions-list');
+  const btn    = document.getElementById('refresh-suggestions-btn');
+  if (!listEl) return;
+
+  const currentTitles = (insightsData[plat]?.title_suggestions || []).map(s => s.title);
+  const isLi    = plat === 'linkedin';
+  const results = (isLi ? state.liResults : state.allResults).filter(r => r.state === 'enriched');
+  const top10   = results
+    .slice()
+    .sort((a, b) => engagementScore(b) - engagementScore(a))
+    .slice(0, 10)
+    .map(r => ({ title: (r.title || '').slice(0, 100), engagement: (r.likes || 0) + (r.comments || 0) }));
+
+  // Show spinner in suggestions area
+  if (btn) { btn.innerHTML = '<span class="spinner" style="margin-right:0"></span>'; btn.disabled = true; }
+  listEl.innerHTML = `<div class="flex justify-center py-4"><span class="spinner" style="width:18px;height:18px;border-width:2px"></span></div>`;
+
+  const prompt = `Generate 5 fresh social media post title ideas. Avoid repeating these existing titles: ${JSON.stringify(currentTitles)}.
+Inspired by these top-performing posts: ${JSON.stringify(top10)}.
+Return ONLY valid JSON array — no markdown: [{"title":"string","rationale":"string"}]`;
+
+  try {
+    const client = new Anthropic({ apiKey: getClaudeKey(), dangerouslyAllowBrowser: true });
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = response.content?.[0]?.text || '[]';
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(clean);
+    if (insightsData[plat]) insightsData[plat].title_suggestions = parsed;
+    listEl.innerHTML = parsed.map(s => `
+      <div class="suggestion-item">
+        <p class="text-sm font-medium text-gray-800">${escHtml(s.title || '')}</p>
+        ${s.rationale ? `<p class="text-xs text-gray-400 mt-0.5">${escHtml(s.rationale)}</p>` : ''}
+      </div>`).join('');
+  } catch(e) {
+    const isAuth = e.status === 401 || (e.message || '').includes('authentication');
+    listEl.innerHTML = isAuth
+      ? `<p class="text-xs text-red-500 py-2">Invalid Claude API key. <button class="underline" onclick="openSettingsModal()">Open Settings</button> to update it.</p>`
+      : `<p class="text-xs text-red-500 py-2">${escHtml(e.message)}</p>`;
+  } finally {
+    if (btn) { btn.innerHTML = '🔄 Refresh'; btn.disabled = false; }
+  }
+}
+
+// ── MAIN SEARCH ────────────────────────────────────────────
+async function doSearch(forceRefresh = false) {
+  const keyword = document.getElementById('kw').value.trim();
+  if (!keyword || state.running) return;
+
+  const page         = 1;
+  const dateFrom     = document.getElementById('date-from').value || null;
+  const dateTo       = document.getElementById('date-to').value   || null;
+  const lang         = document.getElementById('lang').value || '';
+  const totalResults = parseInt(document.getElementById('total-results').value) || 10;
+  const platform     = state.platform;
+
+  state.keyword = keyword; state.page = page; state.dateFrom = dateFrom;
+  state.dateTo = dateTo; state.lang = lang; state.perPage = 10;
+  state.totalResults = totalResults;
+  // Reset all result sets
+  state.enrichMap = {}; state.enrichedPages = new Set(); state.enrichingPages = new Set();
+  state.allResults = [];
+  state.liEnrichMap = {}; state.liEnrichedPages = new Set(); state.liEnrichingPages = new Set();
+  state.liResults = [];
+  state.running = true;
+  if (platform === 'both') state.activeTab = 'facebook';
+
+  // Reset sort state
+  state.sortMode = 'default';
+  engagementEnrichingFb = false;
+  engagementEnrichingLi = false;
+  clearTimeout(sortRerenderTimer);
+  hideSortIndicator();
+  const sortSel = document.getElementById('sort-select');
+  if (sortSel) sortSel.value = 'default';
+
+  // Reset insights state
+  state.insightsView = 'results';
+  insightsData = {};
+  insightsEnrichHooks = null;
+  destroyCharts();
+  const viewTabBar = document.getElementById('view-tab-bar');
+  if (viewTabBar) viewTabBar.classList.add('hidden');
+  const insightsPanel = document.getElementById('insights-panel');
+  if (insightsPanel) insightsPanel.classList.add('hidden');
+  const resultsView = document.getElementById('results-view');
+  if (resultsView) resultsView.classList.remove('hidden');
+  document.getElementById('view-tab-results')?.classList.add('active');
+  document.getElementById('view-tab-insights')?.classList.remove('active');
+
+  setSearchBtnState(true);
+  setStatus('searching', 'Searching…');
+  hideCacheNotice(); clearResults(); hidePagination();
+  document.getElementById('progress-wrap').classList.add('hidden');
+  if (platform === 'both') _syncTabBar();
+
+  // ── Cache check ──
+  if (!forceRefresh) {
+    let hitFb = false, hitLi = false;
+    if (platform !== 'linkedin') {
+      const cachedFb = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'facebook');
+      if (cachedFb) {
+        state.allResults    = cachedFb.results;
+        state.enrichedPages = new Set(cachedFb.enrichedPages || []);
+        showCacheNotice(cachedFb.savedAt);
+        hitFb = true;
+      }
+    }
+    if (platform !== 'facebook') {
+      const cachedLi = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'linkedin');
+      if (cachedLi) {
+        state.liResults        = cachedLi.results;
+        state.liEnrichedPages  = new Set(cachedLi.enrichedPages || []);
+        if (!hitFb) showCacheNotice(cachedLi.savedAt);
+        hitLi = true;
+      }
+    }
+    const needFb = (platform !== 'linkedin') && !hitFb;
+    const needLi = (platform !== 'facebook') && !hitLi;
+    if (!needFb && !needLi) {
+      hideStatus(); renderCurrentPage();
+      state.running = false; setSearchBtnState(false);
+      enrichCurrentPage();
+      return;
+    }
+  }
+
+  // ── Helper: apply date filter ──
+  const applyDateFilter = items => {
+    if (!dateFrom && !dateTo) return items;
+    return items.filter(r => {
+      if (!r.publishedAt) return true;
+      const d = new Date(r.publishedAt);
+      if (dateFrom && d < new Date(dateFrom)) return false;
+      if (dateTo   && d > new Date(dateTo + 'T23:59:59')) return false;
+      return true;
+    });
+  };
+
+  // ── Parallel fire-and-forget for 'both' mode ──
+  let fbIdx = 0, liIdx = 0;
+
+  const onFbBatch = (newOrganic) => {
+    let normalized = applyDateFilter(newOrganic.map(r => normalizeGoogleResult(r, fbIdx++)));
+    if (!normalized.length) return;
+    state.allResults.push(...normalized);
+    enrichCurrentPage('facebook'); // always enrich FB regardless of active tab
+    if (platform !== 'both' || state.activeTab === 'facebook') renderCurrentPage();
+    if (platform === 'both') _syncTabBar();
+  };
+
+  const onLiBatch = (newOrganic) => {
+    console.log('[LI] onLiBatch received', newOrganic.length, 'organic items');
+    let normalized = applyDateFilter(newOrganic.map(r => normalizeLinkedInResult(r, liIdx++)));
+    console.log('[LI] after dateFilter:', normalized.length, 'items, total liResults:', state.liResults.length + normalized.length);
+    if (!normalized.length) return;
+    state.liResults.push(...normalized);
+    enrichCurrentPage('linkedin'); // always enrich LI regardless of active tab
+    if (platform !== 'both' || state.activeTab === 'linkedin') renderCurrentPage();
+    if (platform === 'both') _syncTabBar();
+  };
+
+  const fbDone = { v: false }, liDone = { v: false };
+  const checkAllDone = () => {
+    if (!fbDone.v || !liDone.v) return;
+    state.running = false; setSearchBtnState(false);
+    if (!state.allResults.length && !state.liResults.length) { setStatus('info','No results found.'); return; }
+    hideStatus();
+    renderCurrentPage();
+    // Trigger enrichment for both platforms so it runs in the background regardless of active tab
+    if (state.allResults.length > 0) enrichCurrentPage('facebook');
+    if (state.liResults.length > 0) enrichCurrentPage('linkedin');
+  };
+
+  try {
+    if (platform !== 'linkedin') {
+      runGoogleSearch(keyword, totalResults, dateFrom, dateTo, lang,
+        msg => setStatus('searching', msg), onFbBatch)
+        .then(() => { fbDone.v = true; checkAllDone(); })
+        .catch(() => { fbDone.v = true; checkAllDone(); });
+    } else { fbDone.v = true; }
+
+    if (platform !== 'facebook') {
+      runLinkedInSearch(keyword, totalResults, dateFrom, dateTo, lang,
+        msg => setStatus('searching', msg), onLiBatch)
+        .then(() => { liDone.v = true; checkAllDone(); })
+        .catch(() => { liDone.v = true; checkAllDone(); });
+    } else { liDone.v = true; }
+
+    // Immediate check in case nothing was fired (shouldn't happen, but safe)
+    checkAllDone();
+
+  } catch(e) {
+    setStatus('error', `Error: ${e.message}`);
+    state.running = false; setSearchBtnState(false);
+  }
+}
+
+function clearCacheAndSearch() { clearCacheForCurrent(); doSearch(true); }
+
+// ── ACTIVE RESULTS HELPER ──────────────────────────────────
+function getActiveResults() {
+  const raw = (() => {
+    if (state.platform === 'linkedin') return state.liResults;
+    if (state.platform === 'both') return state.activeTab === 'linkedin' ? state.liResults : state.allResults;
+    return state.allResults;
+  })();
+  if (state.sortMode !== 'engagement') return raw;
+  // Return a sorted copy — highest engagement first, unenriched at bottom
+  return [...raw].sort((a, b) => engagementScore(b) - engagementScore(a));
+}
+
+function engagementScore(r) {
+  if (r.state !== 'enriched') return -1;
+  return (r.likes || 0) + (r.comments || 0) + (r.shares || 0);
+}
+
+// ── LAZY PER-PAGE ENRICHMENT ───────────────────────────────
+// forPlatform: 'facebook' | 'linkedin' | null (auto-detect from activeTab)
+async function enrichCurrentPage(forPlatform = null) {
+  const effectivePlatform = forPlatform ||
+    (state.platform === 'both' ? state.activeTab : state.platform);
+  const isLi = effectivePlatform === 'linkedin';
+  const results      = isLi ? state.liResults      : state.allResults;
+  const enrichedPgs  = isLi ? state.liEnrichedPages  : state.enrichedPages;
+  const enrichingPgs = isLi ? state.liEnrichingPages : state.enrichingPages;
+  const page = state.page;
+
+  console.log(`[enrichCurrentPage] platform=${effectivePlatform} isLi=${isLi} page=${page} results.length=${results.length} enrichingPgs.has(page)=${enrichingPgs.has(page)}`);
+
+  // Skip if a full-run engagement enrichment is active (avoid aborting it)
+  if (isLi && engagementEnrichingLi) return;
+  if (!isLi && engagementEnrichingFb) return;
+
+  // Skip if enrichment is actively in-flight for this page (prevents concurrent runs)
+  if (enrichingPgs.has(page)) { console.log('[enrichCurrentPage] SKIP: already in-flight'); return; }
+
+  const start       = (page - 1) * state.perPage;
+  const pageResults = results.slice(start, start + state.perPage);
+  const pending     = pageResults.filter(r => r.state === 'pending');
+
+  console.log(`[enrichCurrentPage] pending=${pending.length} pageResults=${pageResults.length}`);
+
+  if (pending.length === 0) {
+    // Only mark as fully enriched when search is also done
+    if (!state.running) enrichedPgs.add(page);
+    console.log('[enrichCurrentPage] SKIP: no pending items');
+    return;
+  }
+
+  // New pending items found — clear any stale "enriched" mark and start enrichment
+  enrichedPgs.delete(page);
+  enrichingPgs.add(page);
+
+  // Only show progress UI if this enrichment matches the currently visible tab
+  const isActiveView = (state.platform !== 'both') ||
+    (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+  if (isActiveView) {
+    showProgressBar(0, pending.length);
+    const pageLabel = state.totalResults > state.perPage ? ` (page ${page})` : '';
+    const platformLabel = isLi ? 'LinkedIn' : 'Facebook';
+    setStatus('enriching', `Enriching ${platformLabel} engagement…${pageLabel}`);
+  }
+
+  const enrichFn = isLi ? enrichLiProgressively : enrichProgressively;
+  const thisPlatform = isLi ? 'linkedin' : 'facebook'; // capture for callbacks
+  await enrichFn(
+    pending,
+    (done, total) => {
+      const stillActive = (state.platform !== 'both') ||
+        (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+      if (stillActive) updateProgressBar(done, total);
+    },
+    (updated) => updateCardInDOM(updated),
+    () => {
+      enrichingPgs.delete(page);
+      if (state.page === page) {
+        // Second-pass: check if search streamed more items onto this page while we were enriching
+        const start2 = (page - 1) * state.perPage;
+        const stillPending = results.slice(start2, start2 + state.perPage).filter(r => r.state === 'pending');
+        if (stillPending.length > 0) {
+          enrichCurrentPage(thisPlatform); // pick up new arrivals for same platform
+          return;
+        }
+        enrichedPgs.add(page);
+        const nowActive = (state.platform !== 'both') ||
+          (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+        if (nowActive) {
+          hideStatus();
+          fadeOutProgressBar(() => {
+            saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
+              state.totalResults, state.allResults, state.enrichedPages, 'facebook');
+            if (state.liResults.length > 0)
+              saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
+                state.totalResults, state.liResults, state.liEnrichedPages, 'linkedin');
+          });
+        } else {
+          // Background enrichment done — just save cache silently
+          saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
+            state.totalResults, state.allResults, state.enrichedPages, 'facebook');
+          if (state.liResults.length > 0)
+            saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
+              state.totalResults, state.liResults, state.liEnrichedPages, 'linkedin');
+        }
+      }
+    }
+  );
+}
+
+// ── PAGINATION ─────────────────────────────────────────────
+function changePage(dir) {
+  const results = getActiveResults();
+  const totalPages = Math.ceil(results.length / state.perPage);
+  const newPage = state.page + dir;
+  if (newPage < 1 || newPage > totalPages) return;
+  state.page = newPage;
+  renderCurrentPage();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  enrichCurrentPage(); // lazy-load enrichment for this page
+}
+function renderCurrentPage() {
+  const results = getActiveResults();
+  const start = (state.page - 1) * state.perPage;
+  renderCards(results.slice(start, start + state.perPage));
+  updateMeta(); updatePagination();
+  if (state.platform === 'both') _syncTabBar();
+  // Keep Insights panel in sync when enrichment completes while user is on that tab
+  if (state.insightsView === 'insights') renderInsightsPanel();
+}
+
+// ── RENDER ─────────────────────────────────────────────────
+function renderCards(results) {
+  document.getElementById('results-grid').innerHTML = results.map(r => buildCard(r)).join('');
+}
+
+function buildCard(r) {
+  const isLi = r.platform === 'linkedin';
+  const stateClass = `card-${r.state || 'pending'}`;
+  const url     = escHtml(r.url || '#');
+  const title   = escHtml(r.title || '');
+  const source  = escHtml(r.source || r.url || '');
+  const dateStr = r.publishedAt ? fmtDate(r.publishedAt) : '';
+
+  let engHtml = '';
+  if (r.state === 'pending') {
+    engHtml = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-400 mt-2">
+      <span class="flex items-center gap-1"><span class="spinner"></span> Loading engagement…</span>
+    </div>`;
+  } else if (r.state === 'failed') {
+    const failParts = isLi
+      ? `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span>`
+      : `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span><span title="Shares">🔁 —</span>`;
+    engHtml = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-400 mt-2">${failParts}</div>`;
+  } else if (r.state === 'enriched') {
+    const parts = [];
+    if (r.likes    !== null) parts.push(`<span title="Reactions">👍 ${fmtNum(r.likes)}</span>`);
+    if (r.comments !== null) parts.push(`<span title="Comments">💬 ${fmtNum(r.comments)}</span>`);
+    if (!isLi && r.shares !== null) parts.push(`<span title="Shares">🔁 ${fmtNum(r.shares)}</span>`);
+    engHtml = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-600 mt-2">${parts.join('')}</div>`;
+  } else {
+    engHtml = `<div class="enrich-zone mt-2 flex gap-3">
+      <div class="skeleton h-3 w-12 rounded"></div><div class="skeleton h-3 w-12 rounded"></div><div class="skeleton h-3 w-12 rounded"></div>
+    </div>`;
+  }
+
+  // Platform icon / author avatar for LinkedIn
+  let iconHtml = '';
+  if (isLi) {
+    if (r.authorImage) {
+      iconHtml = `<img src="${escHtml(r.authorImage)}" alt="${escHtml(r.authorName||'Author')}"
+        class="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 border border-gray-200"
+        onerror="this.outerHTML='<div class=\\'w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center shrink-0 mt-0.5\\'><svg class=\\'w-4 h-4 text-white\\' fill=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path d=\\'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z\\'/></svg></div>'"
+      />`;
+    } else {
+      iconHtml = `<div class="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+      </div>`;
+    }
+  } else {
+    iconHtml = `<div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+      <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12.07h2.54V9.845c0-2.508 1.493-3.891 3.776-3.891 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562v1.875h2.773l-.443 2.89h-2.33v6.988C20.343 21.2 24 17.063 24 12.073z"/></svg>
+    </div>`;
+  }
+
+  // LinkedIn author meta (name + followers) — shown after enrichment
+  const liAuthorMeta = (isLi && r.authorName)
+    ? `<div class="li-author-meta flex items-center gap-1 text-xs text-gray-500 mb-1">
+        <span class="font-medium text-gray-700">${escHtml(r.authorName)}</span>
+        ${r.followers != null ? `<span>· ${fmtNum(r.followers)} followers</span>` : ''}
+      </div>`
+    : `<div class="li-author-meta"></div>`;
+
+  // LinkedIn post image
+  const liMediaHtml = (isLi && r.liImage)
+    ? `<img src="${escHtml(r.liImage)}" alt="Post image"
+        class="li-post-image rounded-lg mt-2 w-full object-cover max-h-60 border border-gray-100"
+        onerror="this.style.display='none'" />`
+    : `<div class="li-post-image"></div>`;
+
+  if (r.state === 'skeleton') {
+    return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 card-skeleton card-enter" data-post-url="${url}">
+      <div class="skeleton h-4 w-3/4 rounded mb-2"></div>
+      <div class="skeleton h-3 w-full rounded mb-1"></div>
+      <div class="skeleton h-3 w-5/6 rounded mb-3"></div>
+      ${engHtml}
+    </div>`;
+  }
+
+  return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${stateClass} card-enter" data-post-url="${url}" data-platform="${isLi?'linkedin':'facebook'}">
+    <div class="flex items-start gap-3">
+      <div class="icon-zone shrink-0 mt-0.5">${iconHtml}</div>
+      <div class="flex-1 min-w-0">
+        ${liAuthorMeta}
+        ${title ? `<a href="${url}" target="_blank" rel="noopener noreferrer"
+          class="font-semibold text-gray-900 text-sm hover:text-blue-600 transition block mb-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${title}</a>` : ''}
+        ${buildTextZone(r)}
+        ${isLi ? liMediaHtml : `<div class="media-zone">${r.media ? buildMediaGrid(extractMediaImages(r.media), r.url) : ''}</div>`}
+        <div class="flex items-center gap-2 flex-wrap mt-2">
+          <a href="${url}" target="_blank" rel="noopener noreferrer"
+            class="text-xs text-blue-500 hover:underline truncate max-w-xs">${source}</a>
+          ${dateStr ? `<span class="text-xs text-gray-400">· ${dateStr}</span>` : ''}
+        </div>
+        ${engHtml}
+        ${!isLi ? `<button class="load-comments-btn mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-500 transition"
+          onclick="toggleComments(this, '${url.replace(/'/g,"\\'")}')">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          View comments
+        </button>
+        <div class="comments-zone hidden"></div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function updateCardInDOM(result) {
+  const card = document.querySelector(`[data-post-url="${escHtml(result.url || '')}"]`);
+  if (!card) return;
+  card.className = card.className.replace(/card-(skeleton|pending|enriched|failed)/g,'').trim() + ` card-${result.state}`;
+
+  const isLi = result.platform === 'linkedin' || card.dataset.platform === 'linkedin';
+
+  // Update post text with full text from scraper
+  if (result.fullText) {
+    const textZone = card.querySelector('.post-text-zone');
+    if (textZone) textZone.outerHTML = buildTextZone(result);
+  }
+
+  if (isLi) {
+    // Author avatar (icon-zone)
+    if (result.authorImage || result.authorName) {
+      const iconZone = card.querySelector('.icon-zone');
+      if (iconZone) {
+        if (result.authorImage) {
+          iconZone.innerHTML = `<img src="${escHtml(result.authorImage)}" alt="${escHtml(result.authorName||'Author')}"
+            class="w-8 h-8 rounded-full object-cover shrink-0 border border-gray-200"
+            onerror="this.outerHTML='<div class=\\'w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center shrink-0\\'><svg class=\\'w-4 h-4 text-white\\' fill=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path d=\\'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z\\'/></svg></div>'"
+          />`;
+        }
+      }
+    }
+    // Author name + followers
+    if (result.authorName) {
+      const authorMeta = card.querySelector('.li-author-meta');
+      if (authorMeta) {
+        authorMeta.innerHTML = `<span class="font-medium text-gray-700">${escHtml(result.authorName)}</span>`
+          + (result.followers != null ? `<span>· ${fmtNum(result.followers)} followers</span>` : '');
+        authorMeta.className = 'li-author-meta flex items-center gap-1 text-xs text-gray-500 mb-1';
+      }
+    }
+    // Post image
+    if (result.liImage) {
+      const imgEl = card.querySelector('.li-post-image');
+      if (imgEl) {
+        imgEl.outerHTML = `<img src="${escHtml(result.liImage)}" alt="Post image"
+          class="li-post-image rounded-lg mt-2 w-full object-cover max-h-60 border border-gray-100"
+          onerror="this.style.display='none'" />`;
+      }
+    }
+  } else {
+    // Inject media grid when enrichment delivers photos (FB only)
+    if (result.media) {
+      const mz = card.querySelector('.media-zone');
+      if (mz) mz.innerHTML = buildMediaGrid(extractMediaImages(result.media), result.url);
+    }
+  }
+
+  const zone = card.querySelector('.enrich-zone');
+  if (!zone) return;
+  if (result.state === 'enriched') {
+    const parts = [];
+    if (result.likes    !== null) parts.push(`<span title="Reactions">👍 ${fmtNum(result.likes)}</span>`);
+    if (result.comments !== null) parts.push(`<span title="Comments">💬 ${fmtNum(result.comments)}</span>`);
+    if (!isLi && result.shares !== null) parts.push(`<span title="Shares">🔁 ${fmtNum(result.shares)}</span>`);
+    zone.outerHTML = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-600 mt-2">${parts.join('')}</div>`;
+  } else if (result.state === 'failed') {
+    const failParts = isLi
+      ? `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span>`
+      : `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span><span title="Shares">🔁 —</span>`;
+    zone.outerHTML = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-400 mt-2">${failParts}</div>`;
+  }
+}
+
+// ── UI HELPERS ─────────────────────────────────────────────
+function setStatus(type, msg) {
+  document.getElementById('status-bar').classList.remove('hidden');
+  document.getElementById('status-text').textContent = msg;
+  document.getElementById('status-icon').textContent = ({searching:'🔍',enriching:'📊',info:'ℹ️',error:'❌'})[type]||'🔍';
+}
+function hideStatus() { document.getElementById('status-bar').classList.add('hidden'); }
+
+function showProgressBar(done, total) {
+  const wrap = document.getElementById('progress-wrap');
+  wrap.classList.remove('hidden'); wrap.style.opacity = '1';
+  updateProgressBar(done, total);
+}
+function updateProgressBar(done, total) {
+  document.getElementById('progress-bar-inner').style.width = (total > 0 ? Math.round(done/total*100) : 0) + '%';
+  document.getElementById('progress-count').textContent = `${done} / ${total}`;
+}
+function fadeOutProgressBar(cb) {
+  const wrap = document.getElementById('progress-wrap');
+  setTimeout(() => { wrap.style.opacity = '0'; setTimeout(() => { wrap.classList.add('hidden'); if (cb) cb(); }, 500); }, 3000);
+}
+function setSearchBtnState(loading) {
+  const btn = document.getElementById('search-btn');
+  btn.disabled = loading; btn.textContent = loading ? 'Searching…' : 'Search';
+  btn.classList.toggle('opacity-60', loading); btn.classList.toggle('cursor-not-allowed', loading);
+}
+function clearResults() {
+  document.getElementById('results-grid').innerHTML = '';
+  document.getElementById('results-meta').classList.add('hidden');
+  document.getElementById('sort-wrap').classList.add('hidden');
+  document.getElementById('view-tab-bar').classList.add('hidden');
+}
+function updateMeta() {
+  const meta = document.getElementById('results-meta');
+  const sortWrap  = document.getElementById('sort-wrap');
+  const viewTabBar = document.getElementById('view-tab-bar');
+  const results = getActiveResults();
+  const total = results.length;
+  if (total === 0) {
+    meta.classList.add('hidden'); sortWrap.classList.add('hidden');
+    viewTabBar.classList.add('hidden'); return;
+  }
+  const totalPages = Math.ceil(total / state.perPage);
+  const isLi = (state.platform === 'linkedin') || (state.platform === 'both' && state.activeTab === 'linkedin');
+  const enrichedPgs = isLi ? state.liEnrichedPages : state.enrichedPages;
+  const enrichedOnPage = enrichedPgs.has(state.page);
+  const pendingNote = !enrichedOnPage && total > state.perPage && state.sortMode === 'default' ? ' · enriching…' : '';
+  meta.textContent = `${total} result${total!==1?'s':''} · Page ${state.page} of ${totalPages}${pendingNote}`;
+  meta.classList.remove('hidden');
+  sortWrap.classList.remove('hidden');
+  viewTabBar.classList.remove('hidden');
+  // Keep selects in sync with state (e.g. after new search resets them)
+  const sel = document.getElementById('sort-select');
+  if (sel && sel.value !== state.sortMode) sel.value = state.sortMode;
+  document.getElementById('view-tab-results')?.classList.toggle('active', state.insightsView === 'results');
+  document.getElementById('view-tab-insights')?.classList.toggle('active', state.insightsView === 'insights');
+}
+
+// ── SORT INDICATOR ─────────────────────────────────────────
+function showSortIndicator() {
+  const el = document.getElementById('sort-indicator');
+  if (el) el.classList.remove('hidden'), el.classList.add('flex');
+}
+function updateSortIndicator(done, total) {
+  const el = document.getElementById('sort-indicator');
+  if (el) el.innerHTML = `<span class="spinner"></span> Updating rankings… ${done}/${total}`;
+}
+function hideSortIndicator() {
+  const el = document.getElementById('sort-indicator');
+  if (el) el.classList.add('hidden'), el.classList.remove('flex');
+}
+function updatePagination() {
+  const results = getActiveResults();
+  const totalPages = Math.ceil(results.length / state.perPage);
+  const pag    = document.getElementById('pagination');
+  const pagTop = document.getElementById('pagination-top');
+  if (totalPages <= 1) {
+    pag.classList.add('hidden');
+    pagTop.classList.add('hidden');
+    return;
+  }
+  pag.classList.remove('hidden');
+  pagTop.classList.remove('hidden');
+  const label = `${state.page} / ${totalPages}`;
+  document.getElementById('page-info').textContent     = label;
+  document.getElementById('page-info-top').textContent = label;
+  document.getElementById('prev-btn').disabled     = state.page <= 1;
+  document.getElementById('next-btn').disabled     = state.page >= totalPages;
+  document.getElementById('prev-btn-top').disabled = state.page <= 1;
+  document.getElementById('next-btn-top').disabled = state.page >= totalPages;
+}
+function hidePagination() {
+  document.getElementById('pagination').classList.add('hidden');
+  document.getElementById('pagination-top').classList.add('hidden');
+}
+function showCacheNotice(savedAt) {
+  const el = document.getElementById('cache-notice');
+  const age = Math.round((Date.now() - savedAt) / 60000);
+  el.textContent = `Showing cached results from ${age < 1 ? 'just now' : `${age} minute${age!==1?'s':''} ago`}`;
+  el.classList.remove('hidden');
+}
+function hideCacheNotice() { document.getElementById('cache-notice').classList.add('hidden'); }
+
+// ── MEDIA HELPERS ──────────────────────────────────────────
+// Normalise the raw media array from FB Posts Scraper:
+//   - Skip wrapper objects (mediaset_token with no thumbnail/typename)
+//   - Accept items that are clearly photos (have thumbnail or photo_image/image uri)
+function extractMediaImages(mediaArr) {
+  if (!Array.isArray(mediaArr)) return [];
+  return mediaArr
+    .filter(m => {
+      // Must have at least one image source
+      const hasSrc = m.thumbnail
+        || (m.photo_image && m.photo_image.uri)
+        || (m.image       && m.image.uri)
+        || (m.large_share_image && m.large_share_image.uri);  // GenericAttachmentMedia / link preview
+      // Skip pure post-link wrappers (mediaset_token entry with no image)
+      const isWrapper = m.mediaset_token && !hasSrc;
+      return hasSrc && !isWrapper;
+    })
+    .map(m => {
+      const thumb   = m.thumbnail;
+      const fullUri = (m.photo_image      && m.photo_image.uri)
+                   || (m.image            && m.image.uri)
+                   || (m.large_share_image && m.large_share_image.uri);
+      return {
+        src:     thumb   || fullUri,
+        fullSrc: fullUri || thumb,
+        pageUrl: (m.url && m.url.includes('facebook.com/photo')) ? m.url : null,
+        isVideo: m.__typename === 'Video' || m.is_playable === true,
+      };
+    })
+    .filter(m => m.src);
+}
+
+// Per-grid image registry — keyed by auto-increment gid
+// Lets the lightbox access all images for a grid by ID
+const _lbSets = {};
+let   _lbGid  = 0;
+
+// Build a Facebook-style multi-image grid.
+// Cells open the lightbox on click (no page navigation).
+function buildMediaGrid(images, postUrl) {
+  if (!images || !images.length) return '';
+  const total = images.length;
+  const gid   = 'g' + (++_lbGid);
+  _lbSets[gid] = images; // register all images for lightbox navigation
+
+  const cell = (img, realIdx, extraClass = '', overlay = '') => {
+    const badge = img.isVideo ? `<div class="media-overlay" style="background:rgba(0,0,0,.35);font-size:2rem">▶</div>` : '';
+    const over  = overlay     ? `<div class="media-overlay">${overlay}</div>` : '';
+    return `<div class="media-cell ${extraClass}" onclick="openLightbox('${gid}',${realIdx})">
+        <img src="${escHtml(img.src)}" loading="lazy" alt=""
+          onerror="this.closest('.media-cell').style.display='none'">
+        ${badge}${over}
+      </div>`;
+  };
+
+  if (total === 1) {
+    return `<div class="media-grid count-1">${cell(images[0], 0)}</div>`;
+  }
+  if (total === 2) {
+    return `<div class="media-grid count-2">
+      ${cell(images[0], 0)}${cell(images[1], 1)}
+    </div>`;
+  }
+  if (total === 3) {
+    return `<div class="media-grid count-3">
+      ${cell(images[0], 0)}
+      <div class="media-col">${cell(images[1], 1)}${cell(images[2], 2)}</div>
+    </div>`;
+  }
+  // 4+ → 2×2; 4th cell shows "+N" overlay but still opens lightbox at idx 3
+  const hidden = total > 4 ? total - 3 : 0;
+  return `<div class="media-grid count-4p">
+    ${cell(images[0], 0)}
+    ${cell(images[1], 1)}
+    ${cell(images[2], 2)}
+    ${cell(images[3], 3, '', hidden > 0 ? `+${hidden}` : '')}
+  </div>`;
+}
+
+// ── POST TEXT HELPERS ──────────────────────────────────────
+const TEXT_PREVIEW_LEN = 280; // chars shown before "Read more"
+
+function buildTextZone(r) {
+  const full    = r.fullText  || '';
+  const snippet = r.content   || '';
+  const display = full || snippet;
+  if (!display) return '';
+
+  // If we have full text and it's meaningfully longer than the snippet → show toggle
+  if (full && full.length > TEXT_PREVIEW_LEN) {
+    const preview = escHtml(full.slice(0, TEXT_PREVIEW_LEN)).replace(/\n/g, '<br>');
+    const fullHtml = escHtml(full).replace(/\n/g, '<br>');
+    return `<div class="post-text-zone mb-2">
+      <p class="post-text-preview text-sm text-gray-600 leading-relaxed">${preview}<span class="text-gray-400">…</span></p>
+      <p class="post-text-full text-sm text-gray-600 leading-relaxed hidden">${fullHtml}</p>
+      <button onclick="togglePostText(this)" class="text-xs text-blue-500 hover:underline mt-0.5 focus:outline-none">Read more</button>
+    </div>`;
+  }
+
+  // Short enough — just show as-is (preserve newlines if full text)
+  const html = escHtml(display).replace(/\n/g, '<br>');
+  return `<div class="post-text-zone mb-2">
+    <p class="text-sm text-gray-600 leading-relaxed">${html}</p>
+  </div>`;
+}
+
+function togglePostText(btn) {
+  const zone    = btn.closest('.post-text-zone');
+  const preview = zone.querySelector('.post-text-preview');
+  const full    = zone.querySelector('.post-text-full');
+  const expand  = full.classList.contains('hidden');
+  preview.classList.toggle('hidden',  expand);
+  full.classList.toggle('hidden',    !expand);
+  btn.textContent = expand ? 'Show less' : 'Read more';
+}
+
+// ── FORMATTERS ─────────────────────────────────────────────
+function fmtNum(n) {
+  if (n===null||n===undefined) return '—';
+  if (n>=1000000) return (n/1000000).toFixed(1)+'M';
+  if (n>=1000) return (n/1000).toFixed(1)+'K';
+  return n.toLocaleString();
+}
+function fmtDate(iso) {
+  try { return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+  catch { return ''; }
+}
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── LIGHTBOX ───────────────────────────────────────────────
+let _lbImages = [];
+let _lbIdx    = 0;
+
+function openLightbox(gid, idx) {
+  _lbImages = _lbSets[gid] || [];
+  if (!_lbImages.length) return;
+  _lbIdx = idx;
+  _lbRender();
+  document.getElementById('lightbox').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function _lbRender() {
+  const img = _lbImages[_lbIdx];
+  const el  = document.getElementById('lb-img');
+  el.src = '';                          // reset so load event fires
+  el.src = img.fullSrc || img.src;
+  document.getElementById('lb-prev').style.visibility    = _lbIdx > 0 ? '' : 'hidden';
+  document.getElementById('lb-next').style.visibility    = _lbIdx < _lbImages.length - 1 ? '' : 'hidden';
+  document.getElementById('lb-counter').textContent      = _lbImages.length > 1
+    ? `${_lbIdx + 1} / ${_lbImages.length}` : '';
+}
+
+function lbNav(dir) {
+  _lbIdx = Math.max(0, Math.min(_lbImages.length - 1, _lbIdx + dir));
+  _lbRender();
+}
+
+function lbClose() {
+  document.getElementById('lightbox').style.display = 'none';
+  document.getElementById('lb-img').src = '';
+  document.body.style.overflow = '';
+}
+
+function lbBgClick(e) {
+  // Close only when clicking the backdrop itself, not the image or buttons
+  if (e.target === document.getElementById('lightbox')) lbClose();
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (document.getElementById('lightbox').style.display === 'none') return;
+  if (e.key === 'Escape')     { lbClose(); }
+  if (e.key === 'ArrowLeft')  { lbNav(-1); }
+  if (e.key === 'ArrowRight') { lbNav(1);  }
+});
+
+// ── COMMENTS ───────────────────────────────────────────────
+// Per-card comment state so we don't re-fetch on toggle
+const commentCache = new Map(); // postUrl → { state: 'loaded'|'error', items: [] }
+
+async function toggleComments(btn, postUrl) {
+  const card = btn.closest('[data-post-url]');
+  const zone = card.querySelector('.comments-zone');
+
+  // If already loaded — just toggle visibility
+  if (commentCache.has(postUrl)) {
+    const hidden = zone.classList.toggle('hidden');
+    btn.innerHTML = hidden
+      ? `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg> View comments`
+      : `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg> Hide comments`;
+    return;
+  }
+
+  // First load — trigger API
+  await loadComments(btn, postUrl, zone);
+}
+
+async function loadComments(btn, postUrl, zone) {
+  // Show loading state
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span> Loading comments…`;
+  zone.classList.remove('hidden');
+  zone.innerHTML = `<div class="flex items-center gap-2 py-2 text-xs text-gray-400"><span class="spinner"></span> Fetching comments from Facebook…</div>`;
+
+  try {
+    const run = await startActor('apify/facebook-comments-scraper', {
+      startUrls:   [{ url: postUrl }],
+      maxComments: 20,
+      maxReplies:  0,
+    });
+
+    // Wait for completion
+    await waitForRun(run.id, status => {
+      zone.querySelector('div').textContent = `Comments: ${status}…`;
+    });
+
+    const items = await fetchDatasetItems(run.defaultDatasetId, 0, 50);
+    // Filter to comments that belong to this post (scraper can return multiple)
+    const comments = items.filter(c => c.text || c.comment);
+
+    commentCache.set(postUrl, { items: comments });
+
+    if (comments.length === 0) {
+      zone.innerHTML = `<p class="text-xs text-gray-400 py-2">No comments found for this post.</p>`;
+    } else {
+      zone.innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-semibold text-gray-500">${comments.length} comment${comments.length!==1?'s':''}</span>
+          <a href="${escHtml(postUrl)}" target="_blank" rel="noopener noreferrer"
+            class="text-xs text-blue-500 hover:underline">View all on Facebook ↗</a>
+        </div>
+        ${comments.map(renderComment).join('')}`;
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg> Hide comments`;
+
+  } catch(e) {
+    console.error('[Comments] Failed:', e);
+    commentCache.set(postUrl, { items: [], error: true });
+    zone.innerHTML = `<p class="text-xs text-red-400 py-2">Failed to load comments. <button class="underline" onclick="commentCache.delete('${postUrl.replace(/'/g,"\\'")}'); toggleComments(this.closest('[data-post-url]').querySelector('.load-comments-btn'), '${postUrl.replace(/'/g,"\\'")}')">Retry</button></p>`;
+    btn.disabled = false;
+    btn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg> View comments`;
+  }
+}
+
+function renderComment(c) {
+  const name    = escHtml(c.profileName || c.name || c.authorName || 'Anonymous');
+  const text    = escHtml(c.text || c.comment || c.message || '');
+  const dateStr = c.date || c.createdAt || c.timestamp || null;
+  const date    = dateStr ? fmtDate(dateStr) : '';
+  const likes   = c.likesCount ?? c.likes ?? null;
+  const initial = name.replace(/&amp;/g,'&').charAt(0).toUpperCase() || '?';
+  const profileUrl = c.profileUrl || c.authorUrl || null;
+
+  return `<div class="comment-item flex items-start gap-2 py-2">
+    <div class="comment-avatar">${initial}</div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-baseline gap-2 flex-wrap mb-0.5">
+        ${profileUrl
+          ? `<a href="${escHtml(profileUrl)}" target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-800 hover:text-blue-500">${name}</a>`
+          : `<span class="text-xs font-semibold text-gray-800">${name}</span>`}
+        ${date  ? `<span class="text-xs text-gray-400">${date}</span>` : ''}
+        ${likes !== null ? `<span class="text-xs text-gray-400">👍 ${fmtNum(likes)}</span>` : ''}
+      </div>
+      ${text ? `<p class="text-xs text-gray-600 leading-relaxed">${text}</p>` : ''}
+    </div>
+  </div>`;
+}
+
+// ── INIT ───────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initAuth();
+  document.getElementById('token-input').addEventListener('keydown', e => { if (e.key==='Enter') saveToken(); });
+  setPlatform('facebook'); // set initial active styles
+});
+
+// ── EXPOSE TO WINDOW (required for onclick= attributes in ES module scope) ──
+window.saveToken                = saveToken;
+window.doSearch                 = doSearch;
+window.setPlatform              = setPlatform;
+window.setDatePreset            = setDatePreset;
+window.clearCacheAndSearch      = clearCacheAndSearch;
+window.changePage               = changePage;
+window.setActiveTab             = setActiveTab;
+window.setInsightsView          = setInsightsView;
+window.openSettingsModal        = openSettingsModal;
+window.closeSettingsModal       = closeSettingsModal;
+window.saveSettingsModal        = saveSettingsModal;
+window.setSortMode              = setSortMode;
+window.triggerInsightsEnrichment = triggerInsightsEnrichment;
+window.callClaudeForInsights    = callClaudeForInsights;
+window.refreshTitleSuggestions  = refreshTitleSuggestions;
+window.togglePostText           = togglePostText;
+window.toggleComments           = toggleComments;
+window.openLightbox             = openLightbox;
+window.lbClose                  = lbClose;
+window.lbNav                    = lbNav;
+window.lbBgClick                = lbBgClick;
+window.commentCache             = commentCache; // used in inline retry onclick
+</script>
+</body>
+</html>
