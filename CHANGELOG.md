@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.1 — 2026-04-20
+
+### Fixed
+- **Apify Credit Usage display** (`social-search.html`): Corrected field name from `totalUsageCreditsUsd` to `totalUsageCreditsUsdAfterVolumeDiscount` so the actual monthly spend is shown correctly.
+- **Search History buttons** (`social-search.html`): Restore, Delete, and Clear all buttons were silently failing because the handler functions were not exposed to `window`. All three are now registered and work correctly.
+
+---
+
 ## v1.3.0 — 2026-04-20
 
 ### Added
