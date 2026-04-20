@@ -1186,14 +1186,10 @@ async function fetchApifyUsage() {
   const token = getToken();
   if (!token) return null;
   try {
-    const [usageRes, limitsRes] = await Promise.all([
-      fetch(`${APIFY_BASE}/users/me/usage/monthly?token=${encodeURIComponent(token)}`),
-      fetch(`${APIFY_BASE}/users/me/limits?token=${encodeURIComponent(token)}`),
-    ]);
-    if (!usageRes.ok || !limitsRes.ok) return null;
-    const usage  = await usageRes.json();
-    const limits = await limitsRes.json();
-    return { usage: usage.data, limits: limits.data };
+    const res = await fetch(`${APIFY_BASE}/users/me/limits?token=${encodeURIComponent(token)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data; // { limits: { maxMonthlyUsageUsd }, current: { monthlyUsageUsd }, monthlyUsageCycle: {...} }
   } catch { return null; }
 }
 
@@ -1204,13 +1200,13 @@ function renderApifyUsage(data) {
     el.innerHTML = '<p class="text-xs text-red-400">Could not load usage. Check your token.</p>';
     return;
   }
-  const used  = data.usage?.totalUsageCreditsUsdAfterVolumeDiscount ?? 0;
-  const limit = data.limits?.monthlyUsageCreditsUsd ?? 0;
+  const used  = data.current?.monthlyUsageUsd ?? 0;
+  const limit = data.limits?.maxMonthlyUsageUsd ?? 0;
   const remaining = Math.max(0, limit - used);
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
   const barColor = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-yellow-400' : 'bg-blue-500';
-  const cycleStart = data.usage?.usageCycle?.startAt ? new Date(data.usage.usageCycle.startAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
-  const cycleEnd   = data.usage?.usageCycle?.endAt   ? new Date(data.usage.usageCycle.endAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  const cycleStart = data.monthlyUsageCycle?.startAt ? new Date(data.monthlyUsageCycle.startAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  const cycleEnd   = data.monthlyUsageCycle?.endAt   ? new Date(data.monthlyUsageCycle.endAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
   el.innerHTML = `
     <div class="space-y-2">
       <div class="flex justify-between text-xs text-gray-700">
