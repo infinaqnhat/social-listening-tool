@@ -327,6 +327,12 @@
         <p class="text-xs text-gray-400 mt-1">Used to generate Insights (topic analysis + title suggestions). Optional.</p>
       </div>
       <p id="settings-err" class="hidden text-xs text-red-500">Apify token is required.</p>
+      <div class="border-t pt-4">
+        <p class="text-xs font-semibold text-gray-500 uppercase mb-2">Apify Credit Usage</p>
+        <div id="apify-usage-section">
+          <p class="text-xs text-gray-400 italic">Loading…</p>
+        </div>
+      </div>
     </div>
     <div class="flex gap-2 mt-5">
       <button onclick="saveSettingsModal()"
@@ -1169,11 +1175,58 @@ function enrichAllForEngagement(platform) {
 function getClaudeKey() { return localStorage.getItem('sl_claude_key') || ''; }
 function saveClaudeKey(k) { if (k) localStorage.setItem('sl_claude_key', k); }
 
+async function fetchApifyUsage() {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const [usageRes, limitsRes] = await Promise.all([
+      fetch(`${APIFY_BASE}/users/me/usage/monthly?token=${encodeURIComponent(token)}`),
+      fetch(`${APIFY_BASE}/users/me/limits?token=${encodeURIComponent(token)}`),
+    ]);
+    if (!usageRes.ok || !limitsRes.ok) return null;
+    const usage  = await usageRes.json();
+    const limits = await limitsRes.json();
+    return { usage: usage.data, limits: limits.data };
+  } catch { return null; }
+}
+
+function renderApifyUsage(data) {
+  const el = document.getElementById('apify-usage-section');
+  if (!el) return;
+  if (!data) {
+    el.innerHTML = '<p class="text-xs text-red-400">Could not load usage. Check your token.</p>';
+    return;
+  }
+  const used  = data.usage?.totalUsageCreditsUsd ?? 0;
+  const limit = data.limits?.monthlyUsageCreditsUsd ?? 0;
+  const remaining = Math.max(0, limit - used);
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const barColor = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-yellow-400' : 'bg-blue-500';
+  const cycleStart = data.usage?.usageCycle?.startAt ? new Date(data.usage.usageCycle.startAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  const cycleEnd   = data.usage?.usageCycle?.endAt   ? new Date(data.usage.usageCycle.endAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  el.innerHTML = `
+    <div class="space-y-2">
+      <div class="flex justify-between text-xs text-gray-700">
+        <span>Used: <strong>$${used.toFixed(2)}</strong></span>
+        <span>Limit: <strong>$${limit.toFixed(2)}</strong></span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+        <div class="${barColor} h-2 rounded-full transition-all" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <div class="flex justify-between text-xs text-gray-400">
+        <span>Remaining: <span class="font-medium text-gray-600">$${remaining.toFixed(2)}</span></span>
+        <span>Cycle: ${cycleStart} – ${cycleEnd}</span>
+      </div>
+    </div>`;
+}
+
 function openSettingsModal() {
   document.getElementById('settings-apify-token').value = getToken();
   document.getElementById('settings-claude-key').value  = getClaudeKey();
   document.getElementById('settings-err').classList.add('hidden');
+  document.getElementById('apify-usage-section').innerHTML = '<p class="text-xs text-gray-400 italic">Loading…</p>';
   document.getElementById('settings-modal').classList.remove('hidden');
+  fetchApifyUsage().then(renderApifyUsage);
 }
 function closeSettingsModal() {
   document.getElementById('settings-modal').classList.add('hidden');
