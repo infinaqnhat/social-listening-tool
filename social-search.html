@@ -70,8 +70,8 @@
     /* ── settings modal ── */
     #settings-modal { background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
     /* ── save button ── */
-    .save-btn { opacity: 0.3; transition: opacity .15s, color .15s; }
-    .save-btn:hover { opacity: 1; }
+    .save-btn { opacity: 0.7; color: #111827; transition: opacity .15s, color .15s; }
+    .save-btn:hover { opacity: 1; color: #2563eb; }
     .save-btn.saved { opacity: 1; color: #2563eb; }
     /* ── toast ── */
     #toast-container .toast-item { background: #1f2937; color: #fff; padding: 8px 16px; border-radius: 8px; font-size: .8rem; box-shadow: 0 4px 12px rgba(0,0,0,.25); animation: fadeInUp .2s ease both; }
@@ -261,6 +261,10 @@
         class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
         🔖 Saved (<span id="saved-tab-count">0</span>)
       </button>
+      <button onclick="setInsightsView('history')" id="view-tab-history"
+        class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
+        🕐 History
+      </button>
     </div>
 
     <!-- Results view wrapper -->
@@ -295,6 +299,9 @@
     <!-- Saved panel -->
     <div id="saved-panel" class="hidden"></div>
 
+    <!-- History panel -->
+    <div id="history-panel" class="hidden"></div>
+
   </div>
 
 </div>
@@ -327,6 +334,12 @@
         <p class="text-xs text-gray-400 mt-1">Used to generate Insights (topic analysis + title suggestions). Optional.</p>
       </div>
       <p id="settings-err" class="hidden text-xs text-red-500">Apify token is required.</p>
+      <div class="border-t pt-4">
+        <p class="text-xs font-semibold text-gray-500 uppercase mb-2">Apify Credit Usage</p>
+        <div id="apify-usage-section">
+          <p class="text-xs text-gray-400 italic">Loading…</p>
+        </div>
+      </div>
     </div>
     <div class="flex gap-2 mt-5">
       <button onclick="saveSettingsModal()"
@@ -1169,11 +1182,54 @@ function enrichAllForEngagement(platform) {
 function getClaudeKey() { return localStorage.getItem('sl_claude_key') || ''; }
 function saveClaudeKey(k) { if (k) localStorage.setItem('sl_claude_key', k); }
 
+async function fetchApifyUsage() {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${APIFY_BASE}/users/me/limits?token=${encodeURIComponent(token)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data; // { limits: { maxMonthlyUsageUsd }, current: { monthlyUsageUsd }, monthlyUsageCycle: {...} }
+  } catch { return null; }
+}
+
+function renderApifyUsage(data) {
+  const el = document.getElementById('apify-usage-section');
+  if (!el) return;
+  if (!data) {
+    el.innerHTML = '<p class="text-xs text-red-400">Could not load usage. Check your token.</p>';
+    return;
+  }
+  const used  = data.current?.monthlyUsageUsd ?? 0;
+  const limit = data.limits?.maxMonthlyUsageUsd ?? 0;
+  const remaining = Math.max(0, limit - used);
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const barColor = pct >= 80 ? 'bg-red-500' : pct >= 50 ? 'bg-yellow-400' : 'bg-blue-500';
+  const cycleStart = data.monthlyUsageCycle?.startAt ? new Date(data.monthlyUsageCycle.startAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  const cycleEnd   = data.monthlyUsageCycle?.endAt   ? new Date(data.monthlyUsageCycle.endAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+  el.innerHTML = `
+    <div class="space-y-2">
+      <div class="flex justify-between text-xs text-gray-700">
+        <span>Used: <strong>$${used.toFixed(2)}</strong></span>
+        <span>Limit: <strong>$${limit.toFixed(2)}</strong></span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+        <div class="${barColor} h-2 rounded-full transition-all" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <div class="flex justify-between text-xs text-gray-400">
+        <span>Remaining: <span class="font-medium text-gray-600">$${remaining.toFixed(2)}</span></span>
+        <span>Cycle: ${cycleStart} – ${cycleEnd}</span>
+      </div>
+    </div>`;
+}
+
 function openSettingsModal() {
   document.getElementById('settings-apify-token').value = getToken();
   document.getElementById('settings-claude-key').value  = getClaudeKey();
   document.getElementById('settings-err').classList.add('hidden');
+  document.getElementById('apify-usage-section').innerHTML = '<p class="text-xs text-gray-400 italic">Loading…</p>';
   document.getElementById('settings-modal').classList.remove('hidden');
+  fetchApifyUsage().then(renderApifyUsage);
 }
 function closeSettingsModal() {
   document.getElementById('settings-modal').classList.add('hidden');
@@ -1187,6 +1243,126 @@ function saveSettingsModal() {
   closeSettingsModal();
   // If Insights panel is open in state-D (waiting for key), re-render it
   if (state.insightsView === 'insights') renderInsightsPanel();
+}
+
+// ── SEARCH HISTORY ─────────────────────────────────────────
+const HISTORY_KEY   = 'sl_search_history';
+const HISTORY_LIMIT = 20;
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+}
+function saveHistory(entries) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(entries)); } catch(e) {}
+}
+function addToHistory(entry) {
+  const entries = getHistory().filter(e => e.id !== entry.id);
+  entries.unshift(entry);
+  saveHistory(entries.slice(0, HISTORY_LIMIT));
+}
+function deleteHistoryEntry(id) {
+  saveHistory(getHistory().filter(e => e.id !== id));
+  renderHistoryPanel();
+}
+function clearHistory() {
+  saveHistory([]);
+  renderHistoryPanel();
+}
+
+function fmtHistoryDate(isoStr) {
+  const d = new Date(isoStr);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return 'Today ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderHistoryPanel() {
+  const panel = document.getElementById('history-panel');
+  if (!panel) return;
+  const entries = getHistory();
+  if (!entries.length) {
+    panel.innerHTML = `<div class="text-center py-10 text-gray-400 text-sm">No search history yet.</div>`;
+    return;
+  }
+  const cards = entries.map(e => {
+    const platLabel = e.platform === 'both' ? '🔵🔷 Both' : e.platform === 'linkedin' ? '🔷 LinkedIn' : '🔵 Facebook';
+    const fbCount = e.allResults?.length || 0;
+    const liCount = e.liResults?.length || 0;
+    const totalCount = fbCount + liCount;
+    const dateRange = (e.dateFrom || e.dateTo) ? `${e.dateFrom || '…'} → ${e.dateTo || '…'}` : 'Any date';
+    return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-start justify-between gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="font-semibold text-gray-900 text-sm truncate">${escHtml(e.keyword)}</span>
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">${platLabel}</span>
+          <span class="text-xs text-gray-400">${totalCount} result${totalCount !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="text-xs text-gray-400">${dateRange} · ${e.lang || 'any'} · ${fmtHistoryDate(e.timestamp)}</div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button onclick="restoreFromHistory(${e.id})"
+          class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition font-medium">
+          Restore
+        </button>
+        <button onclick="deleteHistoryEntry(${e.id})"
+          class="text-xs text-gray-400 hover:text-red-500 transition p-1" title="Delete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+  panel.innerHTML = `
+    <div class="flex justify-end mb-3">
+      <button onclick="clearHistory()" class="text-xs text-gray-400 hover:text-red-500 transition">Clear all</button>
+    </div>
+    <div class="space-y-3">${cards}</div>`;
+}
+
+function restoreFromHistory(id) {
+  const entry = getHistory().find(e => e.id === id);
+  if (!entry) return;
+
+  // Restore state
+  state.keyword      = entry.keyword;
+  state.dateFrom     = entry.dateFrom;
+  state.dateTo       = entry.dateTo;
+  state.lang         = entry.lang;
+  state.totalResults = entry.totalResults;
+  state.page         = 1;
+  state.sortMode     = 'default';
+  state.allResults   = entry.allResults || [];
+  state.liResults    = entry.liResults  || [];
+  state.running      = false;
+
+  // Mark all pages as enriched so enrichCurrentPage won't re-trigger
+  const fbPages = new Set();
+  const liPages = new Set();
+  const totalFbPages = Math.ceil(state.allResults.length / state.perPage);
+  const totalLiPages = Math.ceil(state.liResults.length  / state.perPage);
+  for (let i = 1; i <= totalFbPages; i++) fbPages.add(i);
+  for (let i = 1; i <= totalLiPages; i++) liPages.add(i);
+  state.enrichedPages    = fbPages;
+  state.liEnrichedPages  = liPages;
+  state.enrichingPages   = new Set();
+  state.liEnrichingPages = new Set();
+
+  // Update form UI
+  document.getElementById('kw').value = entry.keyword;
+  document.getElementById('date-from').value = entry.dateFrom || '';
+  document.getElementById('date-to').value   = entry.dateTo   || '';
+  const langSel = document.getElementById('lang');
+  if (langSel) langSel.value = entry.lang || '';
+  const resSel = document.getElementById('total-results');
+  if (resSel) resSel.value = entry.totalResults || 10;
+  setPlatform(entry.platform || 'facebook');
+
+  // Show results tab and render
+  document.getElementById('view-tab-bar').classList.remove('hidden');
+  setInsightsView('results');
+  renderCurrentPage();
+  updateMeta();
 }
 
 // ── SAVED POSTS ────────────────────────────────────────────
@@ -1447,12 +1623,14 @@ function setInsightsView(v) {
   document.getElementById('results-view')   ?.classList.toggle('hidden', v !== 'results');
   document.getElementById('insights-panel') ?.classList.toggle('hidden', v !== 'insights');
   document.getElementById('saved-panel')    ?.classList.toggle('hidden', v !== 'saved');
+  document.getElementById('history-panel')  ?.classList.toggle('hidden', v !== 'history');
   // Tab active state
-  ['results', 'insights', 'saved'].forEach(tab => {
+  ['results', 'insights', 'saved', 'history'].forEach(tab => {
     document.getElementById(`view-tab-${tab}`)?.classList.toggle('active', tab === v);
   });
   if (v === 'insights') renderInsightsPanel();
   if (v === 'saved')    renderSavedPanel();
+  if (v === 'history')  renderHistoryPanel();
 }
 
 function renderInsightsPanel() {
@@ -1926,6 +2104,14 @@ async function doSearch(forceRefresh = false) {
     if (!state.allResults.length && !state.liResults.length) { setStatus('info','No results found.'); return; }
     hideStatus();
     renderCurrentPage();
+    // Save to search history
+    addToHistory({
+      id:           Date.now(),
+      keyword, platform, dateFrom, dateTo, lang, totalResults,
+      timestamp:    new Date().toISOString(),
+      allResults:   state.allResults,
+      liResults:    state.liResults,
+    });
     // Trigger enrichment for both platforms so it runs in the background regardless of active tab
     if (state.allResults.length > 0) enrichCurrentPage('facebook');
     if (state.liResults.length > 0) enrichCurrentPage('linkedin');
@@ -2188,7 +2374,7 @@ function buildCard(r) {
         </button>
         <div class="comments-zone hidden"></div>` : ''}
       </div>
-      <button class="save-btn shrink-0 mt-0.5 p-1 rounded transition${isSaved ? ' saved text-blue-500' : ' text-gray-300 hover:text-blue-400'}"
+      <button class="save-btn shrink-0 mt-0.5 p-1 rounded transition${isSaved ? ' saved text-blue-500' : ' hover:text-blue-400'}"
         title="${isSaved ? 'Unsave post' : 'Save post'}"
         onclick="toggleSavePost('${url.replace(/'/g,"\\'")}')">
         ${isSaved ? savedBtnSvgFilled() : savedBtnSvgEmpty()}
@@ -2676,6 +2862,9 @@ window.unsavePost               = unsavePost;
 window.exportToExcel            = exportToExcel;
 window.exportBackupJSON         = exportBackupJSON;
 window.handleImportJSON         = handleImportJSON;
+window.restoreFromHistory       = restoreFromHistory;
+window.deleteHistoryEntry       = deleteHistoryEntry;
+window.clearHistory             = clearHistory;
 </script>
 </body>
 </html>
