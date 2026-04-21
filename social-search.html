@@ -2576,7 +2576,7 @@ function buildCard(r) {
   const ttVideoId = isTt ? (r.url.match(/\/video\/(\d+)/)?.[1] || '') : '';
   const ttMediaHtml = (isTt && ttVideoId)
     ? `<div class="tt-embed-zone mt-2">
-        <button onclick="toggleTikTokEmbed(this,'${ttVideoId}')"
+        <button onclick="toggleTikTokEmbed(this,'${ttVideoId}','${escHtml(r.url)}')"
           class="flex items-center gap-2 text-xs font-medium text-white bg-black hover:bg-gray-800 transition px-3 py-1.5 rounded-lg">
           <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
           Play video
@@ -2976,7 +2976,7 @@ document.addEventListener('keydown', e => {
 
 // ── COMMENTS ───────────────────────────────────────────────
 // Per-card comment state so we don't re-fetch on toggle
-function toggleTikTokEmbed(btn, videoId) {
+function toggleTikTokEmbed(btn, videoId, videoUrl) {
   const zone = btn.closest('.tt-embed-zone');
   const container = zone.querySelector('.tt-iframe-container');
   const isOpen = !container.classList.contains('hidden');
@@ -2985,12 +2985,18 @@ function toggleTikTokEmbed(btn, videoId) {
     container.innerHTML = '';
     btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play video';
   } else {
-    container.innerHTML = `<iframe src="https://www.tiktok.com/embed/v2/${videoId}"
-      class="w-full rounded-xl border border-gray-200" style="height:560px" frameborder="0"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-      allowfullscreen></iframe>`;
+    container.innerHTML = `<blockquote class="tiktok-embed" cite="${videoUrl}"
+      data-video-id="${videoId}" style="max-width:605px;min-width:325px;">
+      <section></section>
+    </blockquote>`;
     container.classList.remove('hidden');
     btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Close video';
+    const old = document.querySelector('script[src*="tiktok.com/embed.js"]');
+    if (old) old.remove();
+    const s = document.createElement('script');
+    s.src = 'https://www.tiktok.com/embed.js';
+    s.async = true;
+    document.body.appendChild(s);
   }
 }
 
