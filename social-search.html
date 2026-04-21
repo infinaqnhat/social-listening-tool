@@ -2563,6 +2563,18 @@ function buildCard(r) {
         onerror="this.style.display='none'" />`
     : `<div class="li-post-image"></div>`;
 
+  const ttVideoId = isTt ? (r.url.match(/\/video\/(\d+)/)?.[1] || '') : '';
+  const ttMediaHtml = (isTt && ttVideoId)
+    ? `<div class="tt-embed-zone mt-2">
+        <button onclick="toggleTikTokEmbed(this,'${ttVideoId}')"
+          class="flex items-center gap-2 text-xs font-medium text-white bg-black hover:bg-gray-800 transition px-3 py-1.5 rounded-lg">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Play video
+        </button>
+        <div class="tt-iframe-container hidden mt-2"></div>
+      </div>`
+    : '';
+
   if (r.state === 'skeleton') {
     return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 card-skeleton card-enter" data-post-url="${url}">
       <div class="skeleton h-4 w-3/4 rounded mb-2"></div>
@@ -2580,7 +2592,7 @@ function buildCard(r) {
         ${title ? `<a href="${url}" target="_blank" rel="noopener noreferrer"
           class="font-semibold text-gray-900 text-sm hover:text-blue-600 transition block mb-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${title}</a>` : ''}
         ${buildTextZone(r)}
-        ${(isLi || isTt) ? liMediaHtml : `<div class="media-zone">${r.media ? buildMediaGrid(extractMediaImages(r.media), r.url) : ''}</div>`}
+        ${isTt ? ttMediaHtml : isLi ? liMediaHtml : `<div class="media-zone">${r.media ? buildMediaGrid(extractMediaImages(r.media), r.url) : ''}</div>`}
         <div class="flex items-center gap-2 flex-wrap mt-2">
           <a href="${url}" target="_blank" rel="noopener noreferrer"
             class="text-xs text-blue-500 hover:underline truncate max-w-xs">${source}</a>
@@ -2954,6 +2966,24 @@ document.addEventListener('keydown', e => {
 
 // ── COMMENTS ───────────────────────────────────────────────
 // Per-card comment state so we don't re-fetch on toggle
+function toggleTikTokEmbed(btn, videoId) {
+  const zone = btn.closest('.tt-embed-zone');
+  const container = zone.querySelector('.tt-iframe-container');
+  const isOpen = !container.classList.contains('hidden');
+  if (isOpen) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play video';
+  } else {
+    container.innerHTML = `<iframe src="https://www.tiktok.com/embed/v2/${videoId}"
+      class="w-full rounded-xl border border-gray-200" style="height:560px" frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen></iframe>`;
+    container.classList.remove('hidden');
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Close video';
+  }
+}
+
 const commentCache = new Map(); // postUrl → { state: 'loaded'|'error', items: [] }
 
 async function toggleComments(btn, postUrl) {
@@ -3072,6 +3102,7 @@ window.callClaudeForInsights    = callClaudeForInsights;
 window.refreshTitleSuggestions  = refreshTitleSuggestions;
 window.togglePostText           = togglePostText;
 window.toggleComments           = toggleComments;
+window.toggleTikTokEmbed        = toggleTikTokEmbed;
 window.openLightbox             = openLightbox;
 window.lbClose                  = lbClose;
 window.lbNav                    = lbNav;
