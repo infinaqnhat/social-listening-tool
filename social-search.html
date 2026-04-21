@@ -2288,7 +2288,7 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
       topLevelCommentsPerPost:     0,
       proxyCountryCode:            'None',
     };
-    const r = await startActor('clockworks/tiktok-video-scraper', input);
+    const r = await startActor('clockworks/tiktok-scraper', input);
     run = r; datasetId = r.defaultDatasetId;
   } catch(e) {
     results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
