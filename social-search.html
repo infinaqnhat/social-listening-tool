@@ -2300,9 +2300,9 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
       scrapeAllPlaylistVideos: false,
       scrapeAllReplies:        false,
       scrapeAllUserResults:    false,
-      commentsPerUrl:          0,
+      commentsPerUrl:          1,
       repliesPerComment:       0,
-      maxUserResults:          100,
+      maxUserResults:          10,
       videosPerHashtag:        100,
       hashtagRegion:           'US',
       videosPerMusic:          100,
@@ -2311,6 +2311,8 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
     const r = await startActor('api-ninja/tiktok-data-scraper', input);
     run = r; datasetId = r.defaultDatasetId;
   } catch(e) {
+    console.error('[TikTok enrich] actor start failed:', e.message);
+    showToast(`TikTok enrichment failed: ${e.message}`);
     results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
     if (onDone) onDone(0); return;
   }
