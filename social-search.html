@@ -139,6 +139,9 @@
         <button onclick="setPlatform('linkedin')" id="plat-linkedin" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
           🔷 LinkedIn
         </button>
+        <button onclick="setPlatform('tiktok')" id="plat-tiktok" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+          ♪ TikTok
+        </button>
         <button onclick="setPlatform('both')" id="plat-both" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
           ✦ Both
         </button>
@@ -388,6 +391,9 @@ let state = {
   liEnrichMap:      {},
   liEnrichedPages:  new Set(),
   liEnrichingPages: new Set(),
+  ttResults:        [],
+  ttEnrichedPages:  new Set(),
+  ttEnrichingPages: new Set(),
   running:          false,
   sortMode:         'default', // 'default' | 'engagement'
   insightsView:     'results', // 'results' | 'insights'
@@ -399,6 +405,7 @@ let liEnrichAbort = null;
 // Engagement sort state — prevents per-page enrichCurrentPage from aborting a full-run engagement enrichment
 let engagementEnrichingFb = false;
 let engagementEnrichingLi = false;
+let engagementEnrichingTt = false;
 let sortRerenderTimer     = null;
 
 // Insights panel state
@@ -469,7 +476,7 @@ function setDatePreset(preset) {
 
 // ── CACHE ──────────────────────────────────────────────────
 function cacheKey(keyword, dateFrom, dateTo, lang, totalResults, platform) {
-  const prefix = (platform === 'linkedin') ? 'li_cache' : 'fb_cache';
+  const prefix = platform === 'linkedin' ? 'li_cache' : platform === 'tiktok' ? 'tt_cache' : 'fb_cache';
   const d = [dateFrom || 'x', dateTo || 'x', lang || 'any', totalResults || 10].join('_');
   return `${prefix}_${keyword.toLowerCase().trim().replace(/\s+/g,'_')}_${d}`;
 }
@@ -493,7 +500,7 @@ function clearCacheForCurrent() {
   const kw = document.getElementById('kw').value.trim();
   if (!kw) return;
   const kwKey = kw.toLowerCase().trim().replace(/\s+/g,'_');
-  ['fb_cache', 'li_cache'].forEach(prefix => {
+  ['fb_cache', 'li_cache', 'tt_cache'].forEach(prefix => {
     const p = `${prefix}_${kwKey}`;
     Object.keys(localStorage).filter(k => k.startsWith(p)).forEach(k => localStorage.removeItem(k));
   });
@@ -504,9 +511,9 @@ function setPlatform(p) {
   state.platform = p;
   state.activeTab = (p === 'both') ? 'facebook' : p;
   // Update button styles
-  ['facebook','linkedin','both'].forEach(id => {
+  ['facebook','linkedin','tiktok','both'].forEach(id => {
     const btn = document.getElementById(`plat-${id}`);
-    btn.classList.toggle('active', id === p);
+    if (btn) btn.classList.toggle('active', id === p);
   });
   // Show/hide tab bar
   const tabBar = document.getElementById('tab-bar');
@@ -516,6 +523,7 @@ function setPlatform(p) {
   const kw = document.getElementById('kw');
   if (p === 'facebook') kw.placeholder = 'Search Facebook posts…';
   else if (p === 'linkedin') kw.placeholder = 'Search LinkedIn posts…';
+  else if (p === 'tiktok') kw.placeholder = 'Search TikTok videos…';
   else kw.placeholder = 'Search posts…';
 }
 function setActiveTab(t) {
@@ -798,6 +806,20 @@ function normalizeLinkedInResult(r, idx) {
     likes: null, comments: null, shares: null, state: 'pending',
   };
 }
+function normalizeTikTokResult(r, idx) {
+  const url = r.url || r.link || '';
+  const date = r.date || r.publishedAt || null;
+  let publishedAt = null;
+  if (date) { const d = new Date(date); if (!isNaN(d)) publishedAt = d.toISOString(); }
+  return {
+    id: `tt-${idx}-${url}`, url,
+    title: r.title || '', content: r.description || r.snippet || '',
+    source: r.displayedUrl || url, publishedAt,
+    detectedLang: detectLang((r.title||'') + ' ' + (r.description||'')),
+    platform: 'tiktok',
+    likes: null, comments: null, shares: null, plays: null, state: 'pending',
+  };
+}
 
 // ── LINKEDIN SEARCH ────────────────────────────────────────
 async function runLinkedInSearch(keyword, totalResults, dateFrom, dateTo, lang, onStatus, onNewResults) {
@@ -994,6 +1016,65 @@ async function enrichProgressively(results, onProgress, onCardUpdate, onDone) {
   setTimeout(poll, POLL_MS);
 }
 
+// ── TIKTOK SEARCH ──────────────────────────────────────────
+async function runTikTokSearch(keyword, totalResults, dateFrom, dateTo, lang, onStatus, onNewResults) {
+  if (onStatus) onStatus('Starting TikTok search…');
+  const input = {
+    queries:                  keyword,
+    site:                     'tiktok.com',
+    countryCode:              'vn',
+    languageCode:             lang || 'vi',
+    resultsPerPage:           10,
+    maxPagesPerQuery:         Math.ceil(totalResults / 10),
+    mobileResults:            false,
+    includeUnfilteredResults: false,
+    saveHtml:                 false,
+    saveHtmlToKeyValueStore:  false,
+    focusOnPaidAds:           false,
+    includeIcons:             false,
+  };
+  if (dateFrom) input.afterDate  = dateFrom;
+  if (dateTo)   input.beforeDate = dateTo;
+
+  const run = await startActor('apify/google-search-scraper', input);
+  if (onStatus) onStatus('TikTok search: RUNNING…');
+
+  const filterTt = r => {
+    const u = (r.url || r.link || '').toLowerCase();
+    return u.includes('tiktok.com/@') && u.includes('/video/');
+  };
+
+  let seenItems = 0;
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const newItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 20);
+        if (newItems.length > 0) {
+          seenItems += newItems.length;
+          let organic = [];
+          for (const item of newItems) organic = organic.concat(item.organicResults || item.organic || []);
+          organic = organic.filter(filterTt);
+          if (organic.length > 0 && onNewResults) onNewResults(organic);
+        }
+        const status = await getRunStatus(run.id);
+        if (onStatus) onStatus(`TikTok search: ${status}…`);
+        if (['SUCCEEDED','FAILED','ABORTED','TIMED-OUT'].includes(status)) {
+          const finalItems = await fetchDatasetItems(run.defaultDatasetId, seenItems, 500);
+          if (finalItems.length > 0) {
+            let organic = [];
+            for (const item of finalItems) organic = organic.concat(item.organicResults || item.organic || []);
+            organic = organic.filter(filterTt);
+            if (organic.length > 0 && onNewResults) onNewResults(organic);
+          }
+          resolve(); return;
+        }
+        setTimeout(poll, POLL_MS);
+      } catch(e) { reject(e); }
+    };
+    setTimeout(poll, POLL_MS);
+  });
+}
+
 // ── LINKEDIN ENRICHMENT ────────────────────────────────────
 async function enrichLiProgressively(results, onProgress, onCardUpdate, onDone) {
   console.log('[enrichLiProgressively] called with', results.length, 'results');
@@ -1133,16 +1214,19 @@ function setSortMode(mode) {
 
 function enrichAllForEngagement(platform) {
   const isLi = platform === 'linkedin';
+  const isTt = platform === 'tiktok';
   // Skip if a full-run engagement enrichment is already in progress for this platform
   if (isLi && engagementEnrichingLi) return;
-  if (!isLi && engagementEnrichingFb) return;
+  if (isTt && engagementEnrichingTt) return;
+  if (!isLi && !isTt && engagementEnrichingFb) return;
 
-  const allResults = isLi ? state.liResults : state.allResults;
+  const allResults = isLi ? state.liResults : isTt ? state.ttResults : state.allResults;
   const pending = allResults.filter(r => r.state === 'pending');
   if (pending.length === 0) return; // everything already enriched
 
   // Mark as in-progress so enrichCurrentPage won't abort this actor run
   if (isLi) engagementEnrichingLi = true;
+  else if (isTt) engagementEnrichingTt = true;
   else       engagementEnrichingFb = true;
 
   showSortIndicator();
@@ -1164,6 +1248,7 @@ function enrichAllForEngagement(platform) {
 
   const onDone = () => {
     if (isLi) engagementEnrichingLi = false;
+    else if (isTt) engagementEnrichingTt = false;
     else       engagementEnrichingFb = false;
     hideSortIndicator();
     if (state.sortMode === 'engagement') {
@@ -1175,6 +1260,7 @@ function enrichAllForEngagement(platform) {
   };
 
   if (isLi) enrichLiProgressively(pending, onProgress, onCardUpdate, onDone);
+  else if (isTt) enrichTikTokProgressively(pending, onProgress, onCardUpdate, onDone);
   else       enrichProgressively(pending, onProgress, onCardUpdate, onDone);
 }
 
@@ -1287,10 +1373,11 @@ function renderHistoryPanel() {
     return;
   }
   const cards = entries.map(e => {
-    const platLabel = e.platform === 'both' ? '🔵🔷 Both' : e.platform === 'linkedin' ? '🔷 LinkedIn' : '🔵 Facebook';
+    const platLabel = e.platform === 'both' ? '🔵🔷 Both' : e.platform === 'linkedin' ? '🔷 LinkedIn' : e.platform === 'tiktok' ? '♪ TikTok' : '🔵 Facebook';
     const fbCount = e.allResults?.length || 0;
     const liCount = e.liResults?.length || 0;
-    const totalCount = fbCount + liCount;
+    const ttCount = e.ttResults?.length || 0;
+    const totalCount = fbCount + liCount + ttCount;
     const dateRange = (e.dateFrom || e.dateTo) ? `${e.dateFrom || '…'} → ${e.dateTo || '…'}` : 'Any date';
     return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-start justify-between gap-3">
       <div class="flex-1 min-w-0">
@@ -1334,19 +1421,23 @@ function restoreFromHistory(id) {
   state.sortMode     = 'default';
   state.allResults   = entry.allResults || [];
   state.liResults    = entry.liResults  || [];
+  state.ttResults    = entry.ttResults  || [];
   state.running      = false;
 
   // Mark all pages as enriched so enrichCurrentPage won't re-trigger
-  const fbPages = new Set();
-  const liPages = new Set();
+  const fbPages = new Set(), liPages = new Set(), ttPages = new Set();
   const totalFbPages = Math.ceil(state.allResults.length / state.perPage);
   const totalLiPages = Math.ceil(state.liResults.length  / state.perPage);
+  const totalTtPages = Math.ceil(state.ttResults.length  / state.perPage);
   for (let i = 1; i <= totalFbPages; i++) fbPages.add(i);
   for (let i = 1; i <= totalLiPages; i++) liPages.add(i);
+  for (let i = 1; i <= totalTtPages; i++) ttPages.add(i);
   state.enrichedPages    = fbPages;
   state.liEnrichedPages  = liPages;
+  state.ttEnrichedPages  = ttPages;
   state.enrichingPages   = new Set();
   state.liEnrichingPages = new Set();
+  state.ttEnrichingPages = new Set();
 
   // Update form UI
   document.getElementById('kw').value = entry.keyword;
@@ -1399,7 +1490,7 @@ function toggleSavePost(url) {
     _updateSaveBtnDOM(url, false);
   } else {
     // Find the post in current results to capture engagement snapshot
-    const r = [...state.allResults, ...state.liResults].find(r => r.url === url);
+    const r = [...state.allResults, ...state.liResults, ...state.ttResults].find(r => r.url === url);
     if (!r) return;
     saved.push({
       url:      r.url,
@@ -2007,6 +2098,8 @@ async function doSearch(forceRefresh = false) {
   state.allResults = [];
   state.liEnrichMap = {}; state.liEnrichedPages = new Set(); state.liEnrichingPages = new Set();
   state.liResults = [];
+  state.ttEnrichedPages = new Set(); state.ttEnrichingPages = new Set();
+  state.ttResults = [];
   state.running = true;
   if (platform === 'both') state.activeTab = 'facebook';
 
@@ -2014,6 +2107,7 @@ async function doSearch(forceRefresh = false) {
   state.sortMode = 'default';
   engagementEnrichingFb = false;
   engagementEnrichingLi = false;
+  engagementEnrichingTt = false;
   clearTimeout(sortRerenderTimer);
   hideSortIndicator();
   const sortSel = document.getElementById('sort-select');
@@ -2033,8 +2127,8 @@ async function doSearch(forceRefresh = false) {
 
   // ── Cache check ──
   if (!forceRefresh) {
-    let hitFb = false, hitLi = false;
-    if (platform !== 'linkedin') {
+    let hitFb = false, hitLi = false, hitTt = false;
+    if (platform === 'facebook' || platform === 'both') {
       const cachedFb = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'facebook');
       if (cachedFb) {
         state.allResults    = cachedFb.results;
@@ -2043,7 +2137,7 @@ async function doSearch(forceRefresh = false) {
         hitFb = true;
       }
     }
-    if (platform !== 'facebook') {
+    if (platform === 'linkedin' || platform === 'both') {
       const cachedLi = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'linkedin');
       if (cachedLi) {
         state.liResults        = cachedLi.results;
@@ -2052,9 +2146,19 @@ async function doSearch(forceRefresh = false) {
         hitLi = true;
       }
     }
-    const needFb = (platform !== 'linkedin') && !hitFb;
-    const needLi = (platform !== 'facebook') && !hitLi;
-    if (!needFb && !needLi) {
+    if (platform === 'tiktok') {
+      const cachedTt = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'tiktok');
+      if (cachedTt) {
+        state.ttResults       = cachedTt.results;
+        state.ttEnrichedPages = new Set(cachedTt.enrichedPages || []);
+        showCacheNotice(cachedTt.savedAt);
+        hitTt = true;
+      }
+    }
+    const needFb = (platform === 'facebook' || platform === 'both') && !hitFb;
+    const needLi = (platform === 'linkedin' || platform === 'both') && !hitLi;
+    const needTt = (platform === 'tiktok') && !hitTt;
+    if (!needFb && !needLi && !needTt) {
       hideStatus(); renderCurrentPage();
       state.running = false; setSearchBtnState(false);
       enrichCurrentPage();
@@ -2075,64 +2179,78 @@ async function doSearch(forceRefresh = false) {
   };
 
   // ── Parallel fire-and-forget for 'both' mode ──
-  let fbIdx = 0, liIdx = 0;
+  let fbIdx = 0, liIdx = 0, ttIdx = 0;
 
   const onFbBatch = (newOrganic) => {
     let normalized = applyDateFilter(newOrganic.map(r => normalizeGoogleResult(r, fbIdx++)));
     if (!normalized.length) return;
     state.allResults.push(...normalized);
-    enrichCurrentPage('facebook'); // always enrich FB regardless of active tab
+    enrichCurrentPage('facebook');
     if (platform !== 'both' || state.activeTab === 'facebook') renderCurrentPage();
     if (platform === 'both') _syncTabBar();
   };
 
   const onLiBatch = (newOrganic) => {
-    console.log('[LI] onLiBatch received', newOrganic.length, 'organic items');
     let normalized = applyDateFilter(newOrganic.map(r => normalizeLinkedInResult(r, liIdx++)));
-    console.log('[LI] after dateFilter:', normalized.length, 'items, total liResults:', state.liResults.length + normalized.length);
     if (!normalized.length) return;
     state.liResults.push(...normalized);
-    enrichCurrentPage('linkedin'); // always enrich LI regardless of active tab
+    enrichCurrentPage('linkedin');
     if (platform !== 'both' || state.activeTab === 'linkedin') renderCurrentPage();
     if (platform === 'both') _syncTabBar();
   };
 
-  const fbDone = { v: false }, liDone = { v: false };
+  const onTtBatch = (newOrganic) => {
+    let normalized = applyDateFilter(newOrganic.map(r => normalizeTikTokResult(r, ttIdx++)));
+    if (!normalized.length) return;
+    state.ttResults.push(...normalized);
+    enrichCurrentPage('tiktok');
+    if (platform === 'tiktok') renderCurrentPage();
+  };
+
+  const fbDone = { v: false }, liDone = { v: false }, ttDone = { v: false };
   const checkAllDone = () => {
-    if (!fbDone.v || !liDone.v) return;
+    if (!fbDone.v || !liDone.v || !ttDone.v) return;
     state.running = false; setSearchBtnState(false);
-    if (!state.allResults.length && !state.liResults.length) { setStatus('info','No results found.'); return; }
+    if (!state.allResults.length && !state.liResults.length && !state.ttResults.length) {
+      setStatus('info','No results found.'); return;
+    }
     hideStatus();
     renderCurrentPage();
-    // Save to search history
     addToHistory({
       id:           Date.now(),
       keyword, platform, dateFrom, dateTo, lang, totalResults,
       timestamp:    new Date().toISOString(),
       allResults:   state.allResults,
       liResults:    state.liResults,
+      ttResults:    state.ttResults,
     });
-    // Trigger enrichment for both platforms so it runs in the background regardless of active tab
     if (state.allResults.length > 0) enrichCurrentPage('facebook');
     if (state.liResults.length > 0) enrichCurrentPage('linkedin');
+    if (state.ttResults.length > 0) enrichCurrentPage('tiktok');
   };
 
   try {
-    if (platform !== 'linkedin') {
+    if (platform !== 'linkedin' && platform !== 'tiktok') {
       runGoogleSearch(keyword, totalResults, dateFrom, dateTo, lang,
         msg => setStatus('searching', msg), onFbBatch)
         .then(() => { fbDone.v = true; checkAllDone(); })
         .catch(() => { fbDone.v = true; checkAllDone(); });
     } else { fbDone.v = true; }
 
-    if (platform !== 'facebook') {
+    if (platform !== 'facebook' && platform !== 'tiktok') {
       runLinkedInSearch(keyword, totalResults, dateFrom, dateTo, lang,
         msg => setStatus('searching', msg), onLiBatch)
         .then(() => { liDone.v = true; checkAllDone(); })
         .catch(() => { liDone.v = true; checkAllDone(); });
     } else { liDone.v = true; }
 
-    // Immediate check in case nothing was fired (shouldn't happen, but safe)
+    if (platform === 'tiktok') {
+      runTikTokSearch(keyword, totalResults, dateFrom, dateTo, lang,
+        msg => setStatus('searching', msg), onTtBatch)
+        .then(() => { ttDone.v = true; checkAllDone(); })
+        .catch(() => { ttDone.v = true; checkAllDone(); });
+    } else { ttDone.v = true; }
+
     checkAllDone();
 
   } catch(e) {
@@ -2147,6 +2265,7 @@ function clearCacheAndSearch() { clearCacheForCurrent(); doSearch(true); }
 function getActiveResults() {
   const raw = (() => {
     if (state.platform === 'linkedin') return state.liResults;
+    if (state.platform === 'tiktok')   return state.ttResults;
     if (state.platform === 'both') return state.activeTab === 'linkedin' ? state.liResults : state.allResults;
     return state.allResults;
   })();
@@ -2160,55 +2279,164 @@ function engagementScore(r) {
   return (r.likes || 0) + (r.comments || 0) + (r.shares || 0);
 }
 
+// ── TIKTOK ENRICHMENT ──────────────────────────────────────
+let ttEnrichAbort = null;
+async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDone) {
+  if (ttEnrichAbort) ttEnrichAbort.abort = true;
+  const abort = { abort: false };
+  ttEnrichAbort = abort;
+
+  const ttUrls = results.map(r => r.url).filter(u => u && u.includes('tiktok.com'));
+  if (ttUrls.length === 0) { if (onDone) onDone(); return; }
+
+  let run, datasetId;
+  try {
+    const input = {
+      scrapeAllComments:       false,
+      scrapeAllHashtagVideos:  false,
+      scrapeAllMusicVideos:    false,
+      scrapeAllPlaylistVideos: false,
+      scrapeAllReplies:        false,
+      scrapeAllUserResults:    false,
+      videoDetailsList:        ttUrls,
+    };
+    const r = await startActor('api-ninja/tiktok-data-scraper', input);
+    run = r; datasetId = r.defaultDatasetId;
+  } catch(e) {
+    console.error('[TikTok enrich] actor start failed:', e.message);
+    showToast(`TikTok enrichment failed: ${e.message}`);
+    results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+    if (onDone) onDone(0); return;
+  }
+
+  let seenCount = 0, enrichedCount = 0;
+  const total = ttUrls.length;
+
+  // Apify dataset API returns nested objects; the console shows them as flat dot-keys.
+  // Support both: prefer item.data.xxx (nested), fall back to item['data.xxx'] (flat).
+  const applyTtItem = (matched, item) => {
+    const d = (item.data && typeof item.data === 'object') ? item.data : {};
+    matched.likes    = (d.digg_count    ?? item['data.digg_count'])    ?? null;
+    matched.comments = (d.comment_count ?? item['data.comment_count']) ?? null;
+    matched.shares   = (d.share_count   ?? item['data.share_count'])   ?? null;
+    matched.plays    = (d.play_count    ?? item['data.play_count'])     ?? null;
+    const title    = d.title             ?? item['data.title'];
+    const nickname = d.author?.nickname  ?? item['data.author.nickname'];
+    const avatar   = d.author?.avatar    ?? item['data.author.avatar'];
+    const ctime    = d.create_time       ?? item['data.create_time'];
+    const playUrl  = d.play              ?? item['data.play'];
+    const coverUrl = d.cover             ?? item['data.cover'];
+    if (title)    matched.fullText    = title;
+    if (nickname) matched.authorName  = nickname;
+    if (avatar)   matched.authorImage = avatar;
+    if (ctime)    matched.publishedAt = new Date(ctime * 1000).toISOString();
+    if (playUrl)  matched.ttPlayUrl   = playUrl;
+    if (coverUrl) matched.ttCoverUrl  = coverUrl;
+  };
+  const ttHasData = item => {
+    const d = (item.data && typeof item.data === 'object') ? item.data : {};
+    return (d.digg_count ?? item['data.digg_count']) != null
+        || (d.comment_count ?? item['data.comment_count']) != null
+        || !!(d.title ?? item['data.title']);
+  };
+
+  const poll = async () => {
+    if (abort.abort) {
+      results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+      if (onDone) onDone(enrichedCount); return;
+    }
+    try {
+      const newItems = await fetchDatasetItems(datasetId, seenCount, 50);
+      seenCount += newItems.length;
+      for (const item of newItems) {
+        if (abort.abort) break;
+        const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
+        if (matched) {
+          const hasData = ttHasData(item);
+          if (hasData) {
+            applyTtItem(matched, item);
+            matched.state = 'enriched'; enrichedCount++;
+          } else {
+            matched.state = 'failed';
+          }
+          if (onCardUpdate) onCardUpdate(matched);
+        }
+      }
+      if (onProgress) onProgress(enrichedCount, total);
+      if (abort.abort) {
+        results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+        if (onDone) onDone(enrichedCount); return;
+      }
+      const status = await getRunStatus(run.id);
+      if (['SUCCEEDED','FAILED','ABORTED','TIMED-OUT','TIMING-OUT'].includes(status)) {
+        if (status === 'SUCCEEDED' || status === 'TIMED-OUT' || status === 'TIMING-OUT') {
+          const finalItems = await fetchDatasetItems(datasetId, seenCount, 200);
+          for (const item of finalItems) {
+            const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
+            if (matched) {
+              const hasData = ttHasData(item);
+              if (hasData) {
+                applyTtItem(matched, item);
+                matched.state = 'enriched'; enrichedCount++;
+              } else { matched.state = 'failed'; }
+              if (onCardUpdate) onCardUpdate(matched);
+            }
+          }
+        }
+        results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
+        if (onProgress) onProgress(enrichedCount, total);
+        if (onDone) onDone(enrichedCount); return;
+      }
+      if (enrichedCount >= total) { if (onDone) onDone(enrichedCount); return; }
+      setTimeout(poll, POLL_MS);
+    } catch(e) { if (!abort.abort) setTimeout(poll, POLL_MS * 2); }
+  };
+  setTimeout(poll, POLL_MS);
+}
+
 // ── LAZY PER-PAGE ENRICHMENT ───────────────────────────────
-// forPlatform: 'facebook' | 'linkedin' | null (auto-detect from activeTab)
+// forPlatform: 'facebook' | 'linkedin' | 'tiktok' | null (auto-detect from activeTab)
 async function enrichCurrentPage(forPlatform = null) {
   const effectivePlatform = forPlatform ||
     (state.platform === 'both' ? state.activeTab : state.platform);
   const isLi = effectivePlatform === 'linkedin';
-  const results      = isLi ? state.liResults      : state.allResults;
-  const enrichedPgs  = isLi ? state.liEnrichedPages  : state.enrichedPages;
-  const enrichingPgs = isLi ? state.liEnrichingPages : state.enrichingPages;
+  const isTt = effectivePlatform === 'tiktok';
+  const results      = isTt ? state.ttResults      : isLi ? state.liResults      : state.allResults;
+  const enrichedPgs  = isTt ? state.ttEnrichedPages  : isLi ? state.liEnrichedPages  : state.enrichedPages;
+  const enrichingPgs = isTt ? state.ttEnrichingPages : isLi ? state.liEnrichingPages : state.enrichingPages;
   const page = state.page;
-
-  console.log(`[enrichCurrentPage] platform=${effectivePlatform} isLi=${isLi} page=${page} results.length=${results.length} enrichingPgs.has(page)=${enrichingPgs.has(page)}`);
 
   // Skip if a full-run engagement enrichment is active (avoid aborting it)
   if (isLi && engagementEnrichingLi) return;
-  if (!isLi && engagementEnrichingFb) return;
+  if (isTt && engagementEnrichingTt) return;
+  if (!isLi && !isTt && engagementEnrichingFb) return;
 
   // Skip if enrichment is actively in-flight for this page (prevents concurrent runs)
-  if (enrichingPgs.has(page)) { console.log('[enrichCurrentPage] SKIP: already in-flight'); return; }
+  if (enrichingPgs.has(page)) return;
 
   const start       = (page - 1) * state.perPage;
   const pageResults = results.slice(start, start + state.perPage);
   const pending     = pageResults.filter(r => r.state === 'pending');
 
-  console.log(`[enrichCurrentPage] pending=${pending.length} pageResults=${pageResults.length}`);
-
   if (pending.length === 0) {
-    // Only mark as fully enriched when search is also done
     if (!state.running) enrichedPgs.add(page);
-    console.log('[enrichCurrentPage] SKIP: no pending items');
     return;
   }
 
-  // New pending items found — clear any stale "enriched" mark and start enrichment
   enrichedPgs.delete(page);
   enrichingPgs.add(page);
 
-  // Only show progress UI if this enrichment matches the currently visible tab
   const isActiveView = (state.platform !== 'both') ||
     (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
   if (isActiveView) {
     showProgressBar(0, pending.length);
     const pageLabel = state.totalResults > state.perPage ? ` (page ${page})` : '';
-    const platformLabel = isLi ? 'LinkedIn' : 'Facebook';
+    const platformLabel = isTt ? 'TikTok' : isLi ? 'LinkedIn' : 'Facebook';
     setStatus('enriching', `Enriching ${platformLabel} engagement…${pageLabel}`);
   }
 
-  const enrichFn = isLi ? enrichLiProgressively : enrichProgressively;
-  const thisPlatform = isLi ? 'linkedin' : 'facebook'; // capture for callbacks
+  const enrichFn = isTt ? enrichTikTokProgressively : isLi ? enrichLiProgressively : enrichProgressively;
+  const thisPlatform = isTt ? 'tiktok' : isLi ? 'linkedin' : 'facebook';
   await enrichFn(
     pending,
     (done, total) => {
@@ -2220,32 +2448,30 @@ async function enrichCurrentPage(forPlatform = null) {
     () => {
       enrichingPgs.delete(page);
       if (state.page === page) {
-        // Second-pass: check if search streamed more items onto this page while we were enriching
         const start2 = (page - 1) * state.perPage;
         const stillPending = results.slice(start2, start2 + state.perPage).filter(r => r.state === 'pending');
         if (stillPending.length > 0) {
-          enrichCurrentPage(thisPlatform); // pick up new arrivals for same platform
+          enrichCurrentPage(thisPlatform);
           return;
         }
         enrichedPgs.add(page);
         const nowActive = (state.platform !== 'both') ||
           (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
-        if (nowActive) {
-          hideStatus();
-          fadeOutProgressBar(() => {
-            saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
-              state.totalResults, state.allResults, state.enrichedPages, 'facebook');
-            if (state.liResults.length > 0)
-              saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
-                state.totalResults, state.liResults, state.liEnrichedPages, 'linkedin');
-          });
-        } else {
-          // Background enrichment done — just save cache silently
+        const doSave = () => {
           saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
             state.totalResults, state.allResults, state.enrichedPages, 'facebook');
           if (state.liResults.length > 0)
             saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
               state.totalResults, state.liResults, state.liEnrichedPages, 'linkedin');
+          if (state.ttResults.length > 0)
+            saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
+              state.totalResults, state.ttResults, state.ttEnrichedPages, 'tiktok');
+        };
+        if (nowActive || isTt) {
+          hideStatus();
+          fadeOutProgressBar(doSave);
+        } else {
+          doSave();
         }
       }
     }
@@ -2280,6 +2506,7 @@ function renderCards(results) {
 
 function buildCard(r) {
   const isLi    = r.platform === 'linkedin';
+  const isTt    = r.platform === 'tiktok';
   const isSaved = isPostSaved(r.url || '');
   const stateClass = `card-${r.state || 'pending'}`;
   const url     = escHtml(r.url || '#');
@@ -2295,13 +2522,16 @@ function buildCard(r) {
   } else if (r.state === 'failed') {
     const failParts = isLi
       ? `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span>`
-      : `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span><span title="Shares">🔁 —</span>`;
+      : isTt
+        ? `<span title="Likes">👍 —</span><span title="Comments">💬 —</span><span title="Shares">🔁 —</span><span title="Views">▶ —</span>`
+        : `<span title="Reactions">👍 —</span><span title="Comments">💬 —</span><span title="Shares">🔁 —</span>`;
     engHtml = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-400 mt-2">${failParts}</div>`;
   } else if (r.state === 'enriched') {
     const parts = [];
-    if (r.likes    !== null) parts.push(`<span title="Reactions">👍 ${fmtNum(r.likes)}</span>`);
+    if (r.likes    !== null) parts.push(`<span title="${isTt ? 'Likes' : 'Reactions'}">👍 ${fmtNum(r.likes)}</span>`);
     if (r.comments !== null) parts.push(`<span title="Comments">💬 ${fmtNum(r.comments)}</span>`);
     if (!isLi && r.shares !== null) parts.push(`<span title="Shares">🔁 ${fmtNum(r.shares)}</span>`);
+    if (isTt && r.plays !== null) parts.push(`<span title="Views">▶ ${fmtNum(r.plays)}</span>`);
     engHtml = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-600 mt-2">${parts.join('')}</div>`;
   } else {
     engHtml = `<div class="enrich-zone mt-2 flex gap-3">
@@ -2322,17 +2552,32 @@ function buildCard(r) {
         <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
       </div>`;
     }
+  } else if (isTt) {
+    if (r.authorImage) {
+      iconHtml = `<img src="${escHtml(r.authorImage)}" alt="${escHtml(r.authorName||'Author')}"
+        class="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 border border-gray-200"
+        onerror="this.outerHTML='<div class=\\'w-8 h-8 bg-black rounded-full flex items-center justify-center shrink-0 mt-0.5\\'><svg class=\\'w-4 h-4 text-white\\' fill=\\'currentColor\\' viewBox=\\'0 0 24 24\\'><path d=\\'M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.28 6.28 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z\\'/></svg></div>'"
+      />`;
+    } else {
+      iconHtml = `<div class="w-8 h-8 bg-black rounded-full flex items-center justify-center shrink-0 mt-0.5">
+        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.28 6.28 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.18 8.18 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z"/></svg>
+      </div>`;
+    }
   } else {
     iconHtml = `<div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
       <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12.07h2.54V9.845c0-2.508 1.493-3.891 3.776-3.891 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562v1.875h2.773l-.443 2.89h-2.33v6.988C20.343 21.2 24 17.063 24 12.073z"/></svg>
     </div>`;
   }
 
-  // LinkedIn author meta (name + followers) — shown after enrichment
+  // Author meta — LinkedIn (followers) and TikTok (username)
   const liAuthorMeta = (isLi && r.authorName)
     ? `<div class="li-author-meta flex items-center gap-1 text-xs text-gray-500 mb-1">
         <span class="font-medium text-gray-700">${escHtml(r.authorName)}</span>
         ${r.followers != null ? `<span>· ${fmtNum(r.followers)} followers</span>` : ''}
+      </div>`
+    : isTt && r.authorName
+    ? `<div class="li-author-meta flex items-center gap-1 text-xs text-gray-500 mb-1">
+        <span class="font-medium text-gray-700">@${escHtml(r.authorName)}</span>
       </div>`
     : `<div class="li-author-meta"></div>`;
 
@@ -2343,6 +2588,18 @@ function buildCard(r) {
         onerror="this.style.display='none'" />`
     : `<div class="li-post-image"></div>`;
 
+  const ttVideoId = isTt ? (r.url.match(/\/video\/(\d+)/)?.[1] || '') : '';
+  const ttMediaHtml = (isTt && ttVideoId)
+    ? `<div class="tt-embed-zone mt-2">
+        <button onclick="toggleTikTokEmbed(this,'${ttVideoId}','${escHtml(r.url)}')"
+          class="flex items-center gap-2 text-xs font-medium text-white bg-black hover:bg-gray-800 transition px-3 py-1.5 rounded-lg">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Play video
+        </button>
+        <div class="tt-iframe-container hidden mt-2"></div>
+      </div>`
+    : '';
+
   if (r.state === 'skeleton') {
     return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 card-skeleton card-enter" data-post-url="${url}">
       <div class="skeleton h-4 w-3/4 rounded mb-2"></div>
@@ -2352,7 +2609,7 @@ function buildCard(r) {
     </div>`;
   }
 
-  return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${stateClass} card-enter" data-post-url="${url}" data-platform="${isLi?'linkedin':'facebook'}">
+  return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 ${stateClass} card-enter" data-post-url="${url}" data-platform="${r.platform || 'facebook'}">
     <div class="flex items-start gap-3">
       <div class="icon-zone shrink-0 mt-0.5">${iconHtml}</div>
       <div class="flex-1 min-w-0">
@@ -2360,14 +2617,14 @@ function buildCard(r) {
         ${title ? `<a href="${url}" target="_blank" rel="noopener noreferrer"
           class="font-semibold text-gray-900 text-sm hover:text-blue-600 transition block mb-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${title}</a>` : ''}
         ${buildTextZone(r)}
-        ${isLi ? liMediaHtml : `<div class="media-zone">${r.media ? buildMediaGrid(extractMediaImages(r.media), r.url) : ''}</div>`}
+        ${isTt ? ttMediaHtml : isLi ? liMediaHtml : `<div class="media-zone">${r.media ? buildMediaGrid(extractMediaImages(r.media), r.url) : ''}</div>`}
         <div class="flex items-center gap-2 flex-wrap mt-2">
           <a href="${url}" target="_blank" rel="noopener noreferrer"
             class="text-xs text-blue-500 hover:underline truncate max-w-xs">${source}</a>
           ${dateStr ? `<span class="text-xs text-gray-400">· ${dateStr}</span>` : ''}
         </div>
         ${engHtml}
-        ${!isLi ? `<button class="load-comments-btn mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-500 transition"
+        ${(!isLi && !isTt) ? `<button class="load-comments-btn mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-500 transition"
           onclick="toggleComments(this, '${url.replace(/'/g,"\\'")}')">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
           View comments
@@ -2437,11 +2694,13 @@ function updateCardInDOM(result) {
 
   const zone = card.querySelector('.enrich-zone');
   if (!zone) return;
+  const isTt = result.platform === 'tiktok';
   if (result.state === 'enriched') {
     const parts = [];
-    if (result.likes    !== null) parts.push(`<span title="Reactions">👍 ${fmtNum(result.likes)}</span>`);
+    if (result.likes    !== null) parts.push(`<span title="${isTt ? 'Likes' : 'Reactions'}">👍 ${fmtNum(result.likes)}</span>`);
     if (result.comments !== null) parts.push(`<span title="Comments">💬 ${fmtNum(result.comments)}</span>`);
     if (!isLi && result.shares !== null) parts.push(`<span title="Shares">🔁 ${fmtNum(result.shares)}</span>`);
+    if (isTt && result.plays !== null) parts.push(`<span title="Views">▶ ${fmtNum(result.plays)}</span>`);
     zone.outerHTML = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-600 mt-2">${parts.join('')}</div>`;
   } else if (result.state === 'failed') {
     const failParts = isLi
@@ -2734,6 +2993,41 @@ document.addEventListener('keydown', e => {
 
 // ── COMMENTS ───────────────────────────────────────────────
 // Per-card comment state so we don't re-fetch on toggle
+function toggleTikTokEmbed(btn, videoId, videoUrl) {
+  const zone = btn.closest('.tt-embed-zone');
+  const container = zone.querySelector('.tt-iframe-container');
+  const isOpen = !container.classList.contains('hidden');
+  if (isOpen) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play video';
+  } else {
+    // Use direct CDN video URL from enrichment if available, else fall back to oEmbed
+    const result = state.ttResults.find(r => r.url === videoUrl);
+    if (result?.ttPlayUrl) {
+      container.innerHTML = `<video
+        src="${escHtml(result.ttPlayUrl)}"
+        ${result.ttCoverUrl ? `poster="${escHtml(result.ttCoverUrl)}"` : ''}
+        controls autoplay playsinline
+        class="w-full rounded-xl border border-gray-200 max-h-[560px] bg-black"
+        style="display:block"></video>`;
+    } else {
+      container.innerHTML = `<blockquote class="tiktok-embed" cite="${videoUrl}"
+        data-video-id="${videoId}" style="max-width:605px;min-width:325px;">
+        <section></section>
+      </blockquote>`;
+      const old = document.querySelector('script[src*="tiktok.com/embed.js"]');
+      if (old) old.remove();
+      const s = document.createElement('script');
+      s.src = 'https://www.tiktok.com/embed.js';
+      s.async = true;
+      document.body.appendChild(s);
+    }
+    container.classList.remove('hidden');
+    btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Close video';
+  }
+}
+
 const commentCache = new Map(); // postUrl → { state: 'loaded'|'error', items: [] }
 
 async function toggleComments(btn, postUrl) {
@@ -2852,6 +3146,7 @@ window.callClaudeForInsights    = callClaudeForInsights;
 window.refreshTitleSuggestions  = refreshTitleSuggestions;
 window.togglePostText           = togglePostText;
 window.toggleComments           = toggleComments;
+window.toggleTikTokEmbed        = toggleTikTokEmbed;
 window.openLightbox             = openLightbox;
 window.lbClose                  = lbClose;
 window.lbNav                    = lbNav;
