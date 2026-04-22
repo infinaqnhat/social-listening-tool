@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.0 — 2026-04-22
+
+### Added
+- **GitHub Pages support**: Added `index.html` as a copy of `social-search.html` so the app is served automatically at `https://infinaqnhat.github.io/social-listening-tool/`.
+
+### Removed
+- **Unused files**: Removed `fb-search.html`, `hello-world.html`, `proxy.js`, and `serve.sh`.
+
+---
+
 ## v1.4.0 — 2026-04-22
 
 ### Added
