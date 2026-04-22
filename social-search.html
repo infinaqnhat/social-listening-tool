@@ -2312,15 +2312,28 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
   let seenCount = 0, enrichedCount = 0;
   const total = ttUrls.length;
 
+  // Apify dataset API returns nested objects; the console shows them as flat dot-keys.
+  // Support both: prefer item.data.xxx (nested), fall back to item['data.xxx'] (flat).
   const applyTtItem = (matched, item) => {
-    matched.likes    = item['data.digg_count']    ?? null;
-    matched.comments = item['data.comment_count'] ?? null;
-    matched.shares   = item['data.share_count']   ?? null;
-    matched.plays    = item['data.play_count']     ?? null;
-    if (item['data.title'])           matched.fullText   = item['data.title'];
-    if (item['data.author.nickname']) matched.authorName  = item['data.author.nickname'];
-    if (item['data.author.avatar'])   matched.authorImage = item['data.author.avatar'];
-    if (item['data.create_time'])     matched.publishedAt = new Date(item['data.create_time'] * 1000).toISOString();
+    const d = (item.data && typeof item.data === 'object') ? item.data : {};
+    matched.likes    = (d.digg_count    ?? item['data.digg_count'])    ?? null;
+    matched.comments = (d.comment_count ?? item['data.comment_count']) ?? null;
+    matched.shares   = (d.share_count   ?? item['data.share_count'])   ?? null;
+    matched.plays    = (d.play_count    ?? item['data.play_count'])     ?? null;
+    const title    = d.title             ?? item['data.title'];
+    const nickname = d.author?.nickname  ?? item['data.author.nickname'];
+    const avatar   = d.author?.avatar    ?? item['data.author.avatar'];
+    const ctime    = d.create_time       ?? item['data.create_time'];
+    if (title)    matched.fullText    = title;
+    if (nickname) matched.authorName  = nickname;
+    if (avatar)   matched.authorImage = avatar;
+    if (ctime)    matched.publishedAt = new Date(ctime * 1000).toISOString();
+  };
+  const ttHasData = item => {
+    const d = (item.data && typeof item.data === 'object') ? item.data : {};
+    return (d.digg_count ?? item['data.digg_count']) != null
+        || (d.comment_count ?? item['data.comment_count']) != null
+        || !!(d.title ?? item['data.title']);
   };
 
   const poll = async () => {
@@ -2335,7 +2348,7 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
         if (abort.abort) break;
         const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
         if (matched) {
-          const hasData = item['data.digg_count'] != null || item['data.comment_count'] != null || item['data.title'];
+          const hasData = ttHasData(item);
           if (hasData) {
             applyTtItem(matched, item);
             matched.state = 'enriched'; enrichedCount++;
@@ -2357,7 +2370,7 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
           for (const item of finalItems) {
             const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
             if (matched) {
-              const hasData = item['data.digg_count'] != null || item['data.comment_count'] != null || item['data.title'];
+              const hasData = ttHasData(item);
               if (hasData) {
                 applyTtItem(matched, item);
                 matched.state = 'enriched'; enrichedCount++;
@@ -2677,11 +2690,13 @@ function updateCardInDOM(result) {
 
   const zone = card.querySelector('.enrich-zone');
   if (!zone) return;
+  const isTt = result.platform === 'tiktok';
   if (result.state === 'enriched') {
     const parts = [];
-    if (result.likes    !== null) parts.push(`<span title="Reactions">👍 ${fmtNum(result.likes)}</span>`);
+    if (result.likes    !== null) parts.push(`<span title="${isTt ? 'Likes' : 'Reactions'}">👍 ${fmtNum(result.likes)}</span>`);
     if (result.comments !== null) parts.push(`<span title="Comments">💬 ${fmtNum(result.comments)}</span>`);
     if (!isLi && result.shares !== null) parts.push(`<span title="Shares">🔁 ${fmtNum(result.shares)}</span>`);
+    if (isTt && result.plays !== null) parts.push(`<span title="Views">▶ ${fmtNum(result.plays)}</span>`);
     zone.outerHTML = `<div class="enrich-zone flex items-center gap-3 text-xs text-gray-600 mt-2">${parts.join('')}</div>`;
   } else if (result.state === 'failed') {
     const failParts = isLi
