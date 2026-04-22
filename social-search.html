@@ -2324,10 +2324,14 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
     const nickname = d.author?.nickname  ?? item['data.author.nickname'];
     const avatar   = d.author?.avatar    ?? item['data.author.avatar'];
     const ctime    = d.create_time       ?? item['data.create_time'];
+    const playUrl  = d.play              ?? item['data.play'];
+    const coverUrl = d.cover             ?? item['data.cover'];
     if (title)    matched.fullText    = title;
     if (nickname) matched.authorName  = nickname;
     if (avatar)   matched.authorImage = avatar;
     if (ctime)    matched.publishedAt = new Date(ctime * 1000).toISOString();
+    if (playUrl)  matched.ttPlayUrl   = playUrl;
+    if (coverUrl) matched.ttCoverUrl  = coverUrl;
   };
   const ttHasData = item => {
     const d = (item.data && typeof item.data === 'object') ? item.data : {};
@@ -2998,18 +3002,29 @@ function toggleTikTokEmbed(btn, videoId, videoUrl) {
     container.innerHTML = '';
     btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> Play video';
   } else {
-    container.innerHTML = `<blockquote class="tiktok-embed" cite="${videoUrl}"
-      data-video-id="${videoId}" style="max-width:605px;min-width:325px;">
-      <section></section>
-    </blockquote>`;
+    // Use direct CDN video URL from enrichment if available, else fall back to oEmbed
+    const result = state.ttResults.find(r => r.url === videoUrl);
+    if (result?.ttPlayUrl) {
+      container.innerHTML = `<video
+        src="${escHtml(result.ttPlayUrl)}"
+        ${result.ttCoverUrl ? `poster="${escHtml(result.ttCoverUrl)}"` : ''}
+        controls autoplay playsinline
+        class="w-full rounded-xl border border-gray-200 max-h-[560px] bg-black"
+        style="display:block"></video>`;
+    } else {
+      container.innerHTML = `<blockquote class="tiktok-embed" cite="${videoUrl}"
+        data-video-id="${videoId}" style="max-width:605px;min-width:325px;">
+        <section></section>
+      </blockquote>`;
+      const old = document.querySelector('script[src*="tiktok.com/embed.js"]');
+      if (old) old.remove();
+      const s = document.createElement('script');
+      s.src = 'https://www.tiktok.com/embed.js';
+      s.async = true;
+      document.body.appendChild(s);
+    }
     container.classList.remove('hidden');
     btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Close video';
-    const old = document.querySelector('script[src*="tiktok.com/embed.js"]');
-    if (old) old.remove();
-    const s = document.createElement('script');
-    s.src = 'https://www.tiktok.com/embed.js';
-    s.async = true;
-    document.body.appendChild(s);
   }
 }
 
