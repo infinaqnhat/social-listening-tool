@@ -2292,21 +2292,13 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
   let run, datasetId;
   try {
     const input = {
-      videoDetailsList:        ttUrls,
-      categories:              ['videos'],
       scrapeAllComments:       false,
       scrapeAllHashtagVideos:  false,
       scrapeAllMusicVideos:    false,
       scrapeAllPlaylistVideos: false,
       scrapeAllReplies:        false,
       scrapeAllUserResults:    false,
-      commentsPerUrl:          1,
-      repliesPerComment:       0,
-      maxUserResults:          10,
-      videosPerHashtag:        100,
-      hashtagRegion:           'US',
-      videosPerMusic:          100,
-      videosPerPlaylist:       100,
+      videoDetailsList:        ttUrls,
     };
     const r = await startActor('api-ninja/tiktok-data-scraper', input);
     run = r; datasetId = r.defaultDatasetId;
