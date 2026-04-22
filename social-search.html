@@ -2275,40 +2275,42 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
   let run, datasetId;
   try {
     const input = {
-      postURLs:                      ttUrls,
-      commentsPerPost:               0,
-      excludePinnedPosts:            false,
-      maxFollowersPerProfile:        0,
-      maxFollowingPerProfile:        0,
-      maxRepliesPerComment:          0,
-      resultsPerPage:                100,
-      scrapeRelatedVideos:           false,
-      shouldDownloadAvatars:         false,
-      shouldDownloadCovers:          false,
-      shouldDownloadMusicCovers:     false,
-      shouldDownloadSlideshowImages: false,
-      shouldDownloadVideos:          false,
-      topLevelCommentsPerPost:       0,
-      proxyCountryCode:              'None',
-      profileScrapeSections:         ['videos'],
-      profileSorting:                'latest',
-      searchSection:                 '',
-      maxProfilesPerQuery:           10,
-      searchSorting:                 '0',
-      searchDatePosted:              '0',
-      downloadSubtitlesOptions:      'NEVER_DOWNLOAD_SUBTITLES',
+      videoDetailsList:        ttUrls,
+      categories:              ['videos'],
+      scrapeAllComments:       false,
+      scrapeAllHashtagVideos:  false,
+      scrapeAllMusicVideos:    false,
+      scrapeAllPlaylistVideos: false,
+      scrapeAllReplies:        false,
+      scrapeAllUserResults:    false,
+      commentsPerUrl:          0,
+      repliesPerComment:       0,
+      maxUserResults:          100,
+      videosPerHashtag:        100,
+      hashtagRegion:           'US',
+      videosPerMusic:          100,
+      videosPerPlaylist:       100,
     };
-    const r = await startActor('clockworks/tiktok-scraper', input);
+    const r = await startActor('api-ninja/tiktok-data-scraper', input);
     run = r; datasetId = r.defaultDatasetId;
   } catch(e) {
     results.forEach(r => { if (r.state === 'pending') { r.state = 'failed'; if (onCardUpdate) onCardUpdate(r); } });
     if (onDone) onDone(0); return;
   }
 
-  const normTtUrl = u => u.toLowerCase().replace(/\/+$/, '').split('?')[0];
-
   let seenCount = 0, enrichedCount = 0;
   const total = ttUrls.length;
+
+  const applyTtItem = (matched, item) => {
+    matched.likes    = item['data.digg_count']    ?? null;
+    matched.comments = item['data.comment_count'] ?? null;
+    matched.shares   = item['data.share_count']   ?? null;
+    matched.plays    = item['data.play_count']     ?? null;
+    if (item['data.title'])           matched.fullText   = item['data.title'];
+    if (item['data.author.nickname']) matched.authorName  = item['data.author.nickname'];
+    if (item['data.author.avatar'])   matched.authorImage = item['data.author.avatar'];
+    if (item['data.create_time'])     matched.publishedAt = new Date(item['data.create_time'] * 1000).toISOString();
+  };
 
   const poll = async () => {
     if (abort.abort) {
@@ -2320,19 +2322,11 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
       seenCount += newItems.length;
       for (const item of newItems) {
         if (abort.abort) break;
-        const itemUrl = item.webVideoUrl || '';
-        const matched = results.find(r => r.state !== 'enriched' && normTtUrl(r.url) === normTtUrl(itemUrl));
+        const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
         if (matched) {
-          const hasData = item.diggCount != null || item.commentCount != null || item.text;
+          const hasData = item['data.digg_count'] != null || item['data.comment_count'] != null || item['data.title'];
           if (hasData) {
-            matched.likes    = item.diggCount    ?? null;
-            matched.comments = item.commentCount ?? null;
-            matched.shares   = item.shareCount   ?? null;
-            matched.plays    = item.playCount     ?? null;
-            if (item.text)                   matched.fullText   = item.text;
-            if (item['authorMeta.name'])     matched.authorName  = item['authorMeta.name'];
-            if (item['authorMeta.avatar'])   matched.authorImage = item['authorMeta.avatar'];
-            if (item.createTimeISO)          matched.publishedAt = item.createTimeISO;
+            applyTtItem(matched, item);
             matched.state = 'enriched'; enrichedCount++;
           } else {
             matched.state = 'failed';
@@ -2350,19 +2344,11 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
         if (status === 'SUCCEEDED' || status === 'TIMED-OUT' || status === 'TIMING-OUT') {
           const finalItems = await fetchDatasetItems(datasetId, seenCount, 200);
           for (const item of finalItems) {
-            const itemUrl = item.webVideoUrl || '';
-            const matched = results.find(r => r.state !== 'enriched' && normTtUrl(r.url) === normTtUrl(itemUrl));
+            const matched = results.find(r => r.state !== 'enriched' && r.url === item.input);
             if (matched) {
-              const hasData = item.diggCount != null || item.commentCount != null || item.text;
+              const hasData = item['data.digg_count'] != null || item['data.comment_count'] != null || item['data.title'];
               if (hasData) {
-                matched.likes    = item.diggCount    ?? null;
-                matched.comments = item.commentCount ?? null;
-                matched.shares   = item.shareCount   ?? null;
-                matched.plays    = item.playCount     ?? null;
-                if (item.text)                   matched.fullText   = item.text;
-                if (item['authorMeta.name'])     matched.authorName  = item['authorMeta.name'];
-                if (item['authorMeta.avatar'])   matched.authorImage = item['authorMeta.avatar'];
-                if (item.createTimeISO)          matched.publishedAt = item.createTimeISO;
+                applyTtItem(matched, item);
                 matched.state = 'enriched'; enrichedCount++;
               } else { matched.state = 'failed'; }
               if (onCardUpdate) onCardUpdate(matched);
