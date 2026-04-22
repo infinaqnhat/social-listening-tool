@@ -1490,7 +1490,7 @@ function toggleSavePost(url) {
     _updateSaveBtnDOM(url, false);
   } else {
     // Find the post in current results to capture engagement snapshot
-    const r = [...state.allResults, ...state.liResults].find(r => r.url === url);
+    const r = [...state.allResults, ...state.liResults, ...state.ttResults].find(r => r.url === url);
     if (!r) return;
     saved.push({
       url:      r.url,
