@@ -405,6 +405,7 @@ let liEnrichAbort = null;
 // Engagement sort state — prevents per-page enrichCurrentPage from aborting a full-run engagement enrichment
 let engagementEnrichingFb = false;
 let engagementEnrichingLi = false;
+let engagementEnrichingTt = false;
 let sortRerenderTimer     = null;
 
 // Insights panel state
@@ -1213,16 +1214,19 @@ function setSortMode(mode) {
 
 function enrichAllForEngagement(platform) {
   const isLi = platform === 'linkedin';
+  const isTt = platform === 'tiktok';
   // Skip if a full-run engagement enrichment is already in progress for this platform
   if (isLi && engagementEnrichingLi) return;
-  if (!isLi && engagementEnrichingFb) return;
+  if (isTt && engagementEnrichingTt) return;
+  if (!isLi && !isTt && engagementEnrichingFb) return;
 
-  const allResults = isLi ? state.liResults : state.allResults;
+  const allResults = isLi ? state.liResults : isTt ? state.ttResults : state.allResults;
   const pending = allResults.filter(r => r.state === 'pending');
   if (pending.length === 0) return; // everything already enriched
 
   // Mark as in-progress so enrichCurrentPage won't abort this actor run
   if (isLi) engagementEnrichingLi = true;
+  else if (isTt) engagementEnrichingTt = true;
   else       engagementEnrichingFb = true;
 
   showSortIndicator();
@@ -1244,6 +1248,7 @@ function enrichAllForEngagement(platform) {
 
   const onDone = () => {
     if (isLi) engagementEnrichingLi = false;
+    else if (isTt) engagementEnrichingTt = false;
     else       engagementEnrichingFb = false;
     hideSortIndicator();
     if (state.sortMode === 'engagement') {
@@ -1255,6 +1260,7 @@ function enrichAllForEngagement(platform) {
   };
 
   if (isLi) enrichLiProgressively(pending, onProgress, onCardUpdate, onDone);
+  else if (isTt) enrichTikTokProgressively(pending, onProgress, onCardUpdate, onDone);
   else       enrichProgressively(pending, onProgress, onCardUpdate, onDone);
 }
 
@@ -2101,6 +2107,7 @@ async function doSearch(forceRefresh = false) {
   state.sortMode = 'default';
   engagementEnrichingFb = false;
   engagementEnrichingLi = false;
+  engagementEnrichingTt = false;
   clearTimeout(sortRerenderTimer);
   hideSortIndicator();
   const sortSel = document.getElementById('sort-select');
@@ -2120,8 +2127,8 @@ async function doSearch(forceRefresh = false) {
 
   // ── Cache check ──
   if (!forceRefresh) {
-    let hitFb = false, hitLi = false;
-    if (platform !== 'linkedin') {
+    let hitFb = false, hitLi = false, hitTt = false;
+    if (platform === 'facebook' || platform === 'both') {
       const cachedFb = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'facebook');
       if (cachedFb) {
         state.allResults    = cachedFb.results;
@@ -2130,7 +2137,7 @@ async function doSearch(forceRefresh = false) {
         hitFb = true;
       }
     }
-    if (platform !== 'facebook') {
+    if (platform === 'linkedin' || platform === 'both') {
       const cachedLi = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'linkedin');
       if (cachedLi) {
         state.liResults        = cachedLi.results;
@@ -2139,9 +2146,19 @@ async function doSearch(forceRefresh = false) {
         hitLi = true;
       }
     }
-    const needFb = (platform !== 'linkedin') && !hitFb;
-    const needLi = (platform !== 'facebook') && !hitLi;
-    if (!needFb && !needLi) {
+    if (platform === 'tiktok') {
+      const cachedTt = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'tiktok');
+      if (cachedTt) {
+        state.ttResults       = cachedTt.results;
+        state.ttEnrichedPages = new Set(cachedTt.enrichedPages || []);
+        showCacheNotice(cachedTt.savedAt);
+        hitTt = true;
+      }
+    }
+    const needFb = (platform === 'facebook' || platform === 'both') && !hitFb;
+    const needLi = (platform === 'linkedin' || platform === 'both') && !hitLi;
+    const needTt = (platform === 'tiktok') && !hitTt;
+    if (!needFb && !needLi && !needTt) {
       hideStatus(); renderCurrentPage();
       state.running = false; setSearchBtnState(false);
       enrichCurrentPage();
@@ -2380,6 +2397,7 @@ async function enrichCurrentPage(forPlatform = null) {
 
   // Skip if a full-run engagement enrichment is active (avoid aborting it)
   if (isLi && engagementEnrichingLi) return;
+  if (isTt && engagementEnrichingTt) return;
   if (!isLi && !isTt && engagementEnrichingFb) return;
 
   // Skip if enrichment is actively in-flight for this page (prevents concurrent runs)
