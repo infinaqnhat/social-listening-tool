@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.7.0 — 2026-04-23
+
+### Added
+- **Saved post folders** (`social-search.html`): Posts can now be organised into named folders. Each saved card shows an inline `<select>` dropdown to assign or change the folder. Picking "＋ New folder…" swaps the select for an inline text input. Folder tabs in the Saved panel filter the list; named folders have rename and delete controls. Export (Excel/JSON) is scoped to the active folder tab.
+
+---
+
+## v1.6.0 — 2026-04-23
+
+### Changed
+- **Multi-select platform toggles** (`social-search.html`): Replaced the "Both" button with three independent toggle buttons — Facebook, LinkedIn, and TikTok can now be activated in any combination simultaneously. The tab bar appears automatically when two or more platforms are selected and shows only the active platforms. Search, enrichment, sort-by-engagement, cache, and history all respect the selected platform set. History entries store a `platforms` array and restore correctly; old entries with `platform: 'both'` are automatically mapped to `['facebook', 'linkedin']`.
+
+---
+
 ## v1.5.0 — 2026-04-22
 
 ### Added
