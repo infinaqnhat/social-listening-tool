@@ -1592,10 +1592,12 @@ function renderFolderPopoverList(url) {
   const post    = getSavedPosts().find(p => p.url === url);
   const current = post?.folder || 'Uncategorized';
   const folders = getFolders();
-  document.getElementById('folder-popover-inner').innerHTML = `
+  const inner = document.getElementById('folder-popover-inner');
+  inner.innerHTML = `
     <div class="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Save to folder</div>
     ${folders.map(f => `
-      <button onclick="assignFolder('${escJs(url)}','${escJs(f)}')"
+      <button data-folder="${escHtml(f)}"
+        onclick="assignFolderFromBtn(this)"
         class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 transition">
         <span class="w-4 text-blue-500 shrink-0">${f === current ? '✓' : ''}</span>
         <span class="truncate">${escHtml(f)}</span>
@@ -1632,6 +1634,10 @@ function saveNewFolder() {
   assignFolder(_popoverUrl, name);
 }
 
+function assignFolderFromBtn(btn) {
+  assignFolder(_popoverUrl, btn.dataset.folder);
+}
+
 function assignFolder(url, folderName) {
   const posts = getSavedPosts();
   const post  = posts.find(p => p.url === url);
@@ -1647,8 +1653,9 @@ function closeFolderPopover() {
   document.getElementById('folder-popover').classList.add('hidden');
 }
 
-function openFolderPopoverFromSaved(event, url) {
+function openFolderPopoverFromSaved(event) {
   event.stopPropagation();
+  const url = event.currentTarget.dataset.url;
   openFolderPopover(event.currentTarget, url);
 }
 
@@ -1742,29 +1749,24 @@ function renderSavedPanel() {
   // ── Folder tabs ──
   const allCount = allPosts.length;
   const folderTabs = [`
-    <button onclick="setSavedFolder('All')"
+    <button data-folder="All" onclick="setSavedFolderFromBtn(this)"
       class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition ${_savedActiveFolder === 'All' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'}">
       All <span class="opacity-75">${allCount}</span>
     </button>`]
     .concat(folders.map(f => {
-      const count   = allPosts.filter(p => (p.folder || 'Uncategorized') === f).length;
-      const isActive = _savedActiveFolder === f;
+      const count        = allPosts.filter(p => (p.folder || 'Uncategorized') === f).length;
+      const isActive     = _savedActiveFolder === f;
       const isUncategorized = f === 'Uncategorized';
-      const manageBtns = !isUncategorized ? `
-        <span class="folder-manage ml-1 hidden items-center gap-0.5">
-          <button onclick="startRenameFolder(event,'${escJs(f)}')" title="Rename" class="hover:text-blue-600 transition p-0.5">✏️</button>
-          <button onclick="confirmDeleteFolder('${escJs(f)}')" title="Delete" class="hover:text-red-500 transition p-0.5">🗑</button>
-        </span>` : '';
       return `
         <div class="relative inline-flex items-center group">
-          <button onclick="setSavedFolder('${escJs(f)}')"
+          <button data-folder="${escHtml(f)}" onclick="setSavedFolderFromBtn(this)"
             class="inline-flex items-center gap-1 pl-3 ${!isUncategorized ? 'pr-1' : 'pr-3'} py-1 rounded-full text-xs font-semibold border transition ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'}">
             📁 ${escHtml(f)} <span class="opacity-75">${count}</span>
           </button>
-          ${!isUncategorized ? `<div class="folder-manage-wrap inline-flex items-center gap-0.5 pl-0.5 pr-2 py-1 rounded-r-full border border-l-0 transition text-gray-400 ${isActive ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300 group-hover:border-blue-400'}">
-            <button onclick="startRenameFolder(event,'${escJs(f)}')" title="Rename"
+          ${!isUncategorized ? `<div class="inline-flex items-center gap-0.5 pl-0.5 pr-2 py-1 rounded-r-full border border-l-0 transition text-gray-400 ${isActive ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300 group-hover:border-blue-400'}">
+            <button data-folder="${escHtml(f)}" onclick="startRenameFolderFromBtn(event,this)" title="Rename"
               class="hover:text-blue-${isActive ? '200' : '600'} transition text-xs leading-none">✏️</button>
-            <button onclick="confirmDeleteFolder('${escJs(f)}')" title="Delete"
+            <button data-folder="${escHtml(f)}" onclick="confirmDeleteFolderFromBtn(this)" title="Delete"
               class="hover:text-red-${isActive ? '200' : '500'} transition text-xs leading-none">🗑</button>
           </div>` : ''}
         </div>`;
@@ -1773,15 +1775,15 @@ function renderSavedPanel() {
   const tabsHtml = `<div class="flex flex-wrap gap-1.5 mb-3">${folderTabs.join('')}</div>`;
 
   // ── Toolbar ──
-  const exportLabel = _savedActiveFolder === 'All' ? 'Export all' : `Export "${_savedActiveFolder}"`;
+  const exportLabel = _savedActiveFolder === 'All' ? 'Export all' : `Export "${escHtml(_savedActiveFolder)}"`;
   const toolbar = `<div class="flex items-center gap-2 mb-3 flex-wrap">
     <span class="text-sm font-medium text-gray-700">${visiblePosts.length} post${visiblePosts.length !== 1 ? 's' : ''}${_savedActiveFolder !== 'All' ? ` in "${escHtml(_savedActiveFolder)}"` : ''}</span>
     <div class="ml-auto flex items-center gap-2 flex-wrap">
-      <button onclick="exportToExcel('${escJs(_savedActiveFolder)}')"
+      <button onclick="exportActiveFolder('excel')"
         class="inline-flex items-center gap-1.5 text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition font-medium">
-        📊 ${escHtml(exportLabel)} (Excel)
+        📊 ${exportLabel} (Excel)
       </button>
-      <button onclick="exportBackupJSON('${escJs(_savedActiveFolder)}')"
+      <button onclick="exportActiveFolder('json')"
         class="inline-flex items-center gap-1.5 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition font-medium">
         💾 ${escHtml(exportLabel)} (JSON)
       </button>
@@ -1797,6 +1799,14 @@ function renderSavedPanel() {
     : `<div class="text-center py-8 text-gray-400 text-sm">No posts in this folder.</div>`;
 
   panel.innerHTML = tabsHtml + toolbar + cardsHtml;
+}
+
+function setSavedFolderFromBtn(btn)          { setSavedFolder(btn.dataset.folder); }
+function startRenameFolderFromBtn(event, btn) { startRenameFolder(event, btn.dataset.folder); }
+function confirmDeleteFolderFromBtn(btn)      { confirmDeleteFolder(btn.dataset.folder); }
+function exportActiveFolder(fmt) {
+  if (fmt === 'excel') exportToExcel(_savedActiveFolder);
+  else                 exportBackupJSON(_savedActiveFolder);
 }
 
 function startRenameFolder(event, oldName) {
@@ -1844,7 +1854,7 @@ function buildSavedCard(p) {
           <a href="${url}" target="_blank" rel="noopener noreferrer"
             class="text-xs text-blue-500 hover:underline truncate max-w-xs">${url}</a>
           ${dateStr ? `<span class="text-xs text-gray-400">· Saved ${dateStr}</span>` : ''}
-          <button onclick="openFolderPopoverFromSaved(event,'${escJs(p.url || '')}')"
+          <button data-url="${url}" onclick="openFolderPopoverFromSaved(event)"
             class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full hover:bg-blue-50 hover:text-blue-600 transition">
             📁 ${escHtml(p.folder || 'Uncategorized')}
           </button>
@@ -3410,15 +3420,20 @@ window.unsavePost               = unsavePost;
 window.exportToExcel            = exportToExcel;
 window.exportBackupJSON         = exportBackupJSON;
 window.handleImportJSON         = handleImportJSON;
-window.setSavedFolder           = setSavedFolder;
-window.assignFolder             = assignFolder;
-window.showNewFolderInput       = showNewFolderInput;
-window.saveNewFolder            = saveNewFolder;
-window.closeFolderPopover       = closeFolderPopover;
-window.renderFolderPopoverList  = renderFolderPopoverList;
+window.setSavedFolder             = setSavedFolder;
+window.setSavedFolderFromBtn      = setSavedFolderFromBtn;
+window.assignFolder               = assignFolder;
+window.assignFolderFromBtn        = assignFolderFromBtn;
+window.showNewFolderInput         = showNewFolderInput;
+window.saveNewFolder              = saveNewFolder;
+window.closeFolderPopover         = closeFolderPopover;
+window.renderFolderPopoverList    = renderFolderPopoverList;
 window.openFolderPopoverFromSaved = openFolderPopoverFromSaved;
-window.startRenameFolder        = startRenameFolder;
-window.confirmDeleteFolder      = confirmDeleteFolder;
+window.startRenameFolder          = startRenameFolder;
+window.startRenameFolderFromBtn   = startRenameFolderFromBtn;
+window.confirmDeleteFolder        = confirmDeleteFolder;
+window.confirmDeleteFolderFromBtn = confirmDeleteFolderFromBtn;
+window.exportActiveFolder         = exportActiveFolder;
 window.restoreFromHistory       = restoreFromHistory;
 window.deleteHistoryEntry       = deleteHistoryEntry;
 window.clearHistory             = clearHistory;
