@@ -131,19 +131,16 @@
           Search
         </button>
       </div>
-      <!-- Platform selector -->
+      <!-- Platform selector (multi-select toggles) -->
       <div class="flex gap-1.5 mb-4">
-        <button onclick="setPlatform('facebook')" id="plat-facebook" class="plat-btn active px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+        <button onclick="togglePlatform('facebook')" id="plat-facebook" class="plat-btn active px-4 py-1.5 rounded-full text-xs font-semibold border transition">
           🔵 Facebook
         </button>
-        <button onclick="setPlatform('linkedin')" id="plat-linkedin" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+        <button onclick="togglePlatform('linkedin')" id="plat-linkedin" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
           🔷 LinkedIn
         </button>
-        <button onclick="setPlatform('tiktok')" id="plat-tiktok" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
+        <button onclick="togglePlatform('tiktok')" id="plat-tiktok" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
           ♪ TikTok
-        </button>
-        <button onclick="setPlatform('both')" id="plat-both" class="plat-btn px-4 py-1.5 rounded-full text-xs font-semibold border transition">
-          ✦ Both
         </button>
       </div>
 
@@ -272,13 +269,16 @@
 
     <!-- Results view wrapper -->
     <div id="results-view">
-      <!-- Tab bar — only shown when platform='both' -->
+      <!-- Tab bar — shown when 2+ platforms are selected -->
       <div id="tab-bar" class="hidden flex border-b border-gray-200 mb-3">
         <button onclick="setActiveTab('facebook')" id="tab-facebook" class="tab-btn active px-4 py-2 text-sm font-medium border-b-2 transition">
           🔵 Facebook (<span id="tab-fb-count">0</span>)
         </button>
         <button onclick="setActiveTab('linkedin')" id="tab-linkedin" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
           🔷 LinkedIn (<span id="tab-li-count">0</span>)
+        </button>
+        <button onclick="setActiveTab('tiktok')" id="tab-tiktok" class="tab-btn px-4 py-2 text-sm font-medium border-b-2 transition">
+          ♪ TikTok (<span id="tab-tt-count">0</span>)
         </button>
       </div>
 
@@ -381,8 +381,8 @@ let state = {
   lang:             'vi',
   perPage:          10,        // display rows per page (always 10)
   totalResults:     10,        // how many Google results to fetch total
-  platform:         'facebook', // 'facebook' | 'linkedin' | 'both'
-  activeTab:        'facebook', // only relevant when platform='both'
+  platforms:        new Set(['facebook']), // Set of active platforms
+  activeTab:        'facebook', // which tab is shown when multiple platforms active
   allResults:       [],
   enrichMap:        {},
   enrichedPages:    new Set(), // pages whose enrichment has completed
@@ -401,6 +401,8 @@ let state = {
 
 let enrichAbort   = null;
 let liEnrichAbort = null;
+
+let _savedActiveFolder = 'All';
 
 // Engagement sort state — prevents per-page enrichCurrentPage from aborting a full-run engagement enrichment
 let engagementEnrichingFb = false;
@@ -507,24 +509,59 @@ function clearCacheForCurrent() {
 }
 
 // ── PLATFORM / TAB UI ──────────────────────────────────────
-function setPlatform(p) {
-  state.platform = p;
-  state.activeTab = (p === 'both') ? 'facebook' : p;
+function togglePlatform(p) {
+  if (state.platforms.has(p)) {
+    if (state.platforms.size === 1) return; // prevent empty selection
+    state.platforms.delete(p);
+  } else {
+    state.platforms.add(p);
+  }
+  // Ensure activeTab is a selected platform
+  if (!state.platforms.has(state.activeTab)) {
+    state.activeTab = [...state.platforms][0];
+  }
   // Update button styles
-  ['facebook','linkedin','tiktok','both'].forEach(id => {
+  ['facebook', 'linkedin', 'tiktok'].forEach(id => {
     const btn = document.getElementById(`plat-${id}`);
-    if (btn) btn.classList.toggle('active', id === p);
+    if (btn) btn.classList.toggle('active', state.platforms.has(id));
   });
   // Show/hide tab bar
-  const tabBar = document.getElementById('tab-bar');
-  tabBar.classList.toggle('hidden', p !== 'both');
-  if (p === 'both') _syncTabBar();
+  const showTabs = state.platforms.size > 1;
+  document.getElementById('tab-bar').classList.toggle('hidden', !showTabs);
+  if (showTabs) _syncTabBar();
   // Update search placeholder
   const kw = document.getElementById('kw');
-  if (p === 'facebook') kw.placeholder = 'Search Facebook posts…';
-  else if (p === 'linkedin') kw.placeholder = 'Search LinkedIn posts…';
-  else if (p === 'tiktok') kw.placeholder = 'Search TikTok videos…';
-  else kw.placeholder = 'Search posts…';
+  if (state.platforms.size > 1) {
+    kw.placeholder = 'Search posts…';
+  } else {
+    const only = [...state.platforms][0];
+    kw.placeholder = only === 'facebook' ? 'Search Facebook posts…'
+                   : only === 'linkedin' ? 'Search LinkedIn posts…'
+                   : 'Search TikTok videos…';
+  }
+}
+
+function setActivePlatforms(arr) {
+  state.platforms = new Set(arr.length ? arr : ['facebook']);
+  if (!state.platforms.has(state.activeTab)) {
+    state.activeTab = [...state.platforms][0];
+  }
+  ['facebook', 'linkedin', 'tiktok'].forEach(id => {
+    const btn = document.getElementById(`plat-${id}`);
+    if (btn) btn.classList.toggle('active', state.platforms.has(id));
+  });
+  const showTabs = state.platforms.size > 1;
+  document.getElementById('tab-bar').classList.toggle('hidden', !showTabs);
+  if (showTabs) _syncTabBar();
+  const kw = document.getElementById('kw');
+  if (state.platforms.size > 1) {
+    kw.placeholder = 'Search posts…';
+  } else {
+    const only = [...state.platforms][0];
+    kw.placeholder = only === 'facebook' ? 'Search Facebook posts…'
+                   : only === 'linkedin' ? 'Search LinkedIn posts…'
+                   : 'Search TikTok videos…';
+  }
 }
 function setActiveTab(t) {
   state.activeTab = t;
@@ -549,11 +586,16 @@ function setActiveTab(t) {
   }
 }
 function _syncTabBar() {
-  ['facebook','linkedin'].forEach(id => {
-    document.getElementById(`tab-${id}`).classList.toggle('active', id === state.activeTab);
+  ['facebook', 'linkedin', 'tiktok'].forEach(p => {
+    const btn = document.getElementById(`tab-${p}`);
+    if (btn) {
+      btn.classList.toggle('hidden', !state.platforms.has(p));
+      btn.classList.toggle('active', p === state.activeTab);
+    }
   });
   document.getElementById('tab-fb-count').textContent = state.allResults.length;
   document.getElementById('tab-li-count').textContent = state.liResults.length;
+  document.getElementById('tab-tt-count').textContent = state.ttResults.length;
 }
 
 // ── APIFY HELPERS ──────────────────────────────────────────
@@ -1199,13 +1241,7 @@ function setSortMode(mode) {
   renderCurrentPage();
 
   if (mode === 'engagement') {
-    // Determine which platform(s) to background-enrich
-    const activePlat = state.platform === 'both' ? state.activeTab : state.platform;
-    enrichAllForEngagement(activePlat);
-    if (state.platform === 'both') {
-      const other = activePlat === 'facebook' ? 'linkedin' : 'facebook';
-      enrichAllForEngagement(other);
-    }
+    for (const p of state.platforms) enrichAllForEngagement(p);
   } else {
     // Back to default — hide indicator, nothing more needed
     hideSortIndicator();
@@ -1373,7 +1409,10 @@ function renderHistoryPanel() {
     return;
   }
   const cards = entries.map(e => {
-    const platLabel = e.platform === 'both' ? '🔵🔷 Both' : e.platform === 'linkedin' ? '🔷 LinkedIn' : e.platform === 'tiktok' ? '♪ TikTok' : '🔵 Facebook';
+    const platArr = e.platforms || (e.platform === 'both' ? ['facebook','linkedin'] : [e.platform || 'facebook']);
+    const emojiMap = { facebook: '🔵', linkedin: '🔷', tiktok: '♪' };
+    const nameMap  = { facebook: 'Facebook', linkedin: 'LinkedIn', tiktok: 'TikTok' };
+    const platLabel = platArr.map(p => `${emojiMap[p]||''} ${nameMap[p]||p}`).join(' + ');
     const fbCount = e.allResults?.length || 0;
     const liCount = e.liResults?.length || 0;
     const ttCount = e.ttResults?.length || 0;
@@ -1447,7 +1486,8 @@ function restoreFromHistory(id) {
   if (langSel) langSel.value = entry.lang || '';
   const resSel = document.getElementById('total-results');
   if (resSel) resSel.value = entry.totalResults || 10;
-  setPlatform(entry.platform || 'facebook');
+  const platArr = entry.platforms || (entry.platform === 'both' ? ['facebook','linkedin'] : [entry.platform || 'facebook']);
+  setActivePlatforms(platArr);
 
   // Show results tab and render
   document.getElementById('view-tab-bar').classList.remove('hidden');
@@ -1488,8 +1528,9 @@ function toggleSavePost(url) {
     setSavedPosts(saved);
     showToast('Post removed');
     _updateSaveBtnDOM(url, false);
+    updateSavedTabCount();
+    if (state.insightsView === 'saved') renderSavedPanel();
   } else {
-    // Find the post in current results to capture engagement snapshot
     const r = [...state.allResults, ...state.liResults, ...state.ttResults].find(r => r.url === url);
     if (!r) return;
     saved.push({
@@ -1500,14 +1541,91 @@ function toggleSavePost(url) {
       comments: r.comments ?? null,
       shares:   r.shares   ?? null,
       platform: r.platform || 'facebook',
+      folder:   'Uncategorized',
       savedAt:  new Date().toISOString(),
     });
     setSavedPosts(saved);
     showToast('Post saved!');
     _updateSaveBtnDOM(url, true);
+    updateSavedTabCount();
+    if (state.insightsView === 'saved') renderSavedPanel();
   }
-  updateSavedTabCount();
+}
+
+// ── FOLDER HELPERS ─────────────────────────────────────────
+function getFolders() {
+  const names = new Set(getSavedPosts().map(p => p.folder || 'Uncategorized'));
+  names.delete('Uncategorized');
+  return ['Uncategorized', ...Array.from(names).sort()];
+}
+
+// ── FOLDER INLINE SELECT ───────────────────────────────────
+function assignFolder(url, folderName) {
+  const posts = getSavedPosts();
+  const post  = posts.find(p => p.url === url);
+  if (post) { post.folder = folderName; setSavedPosts(posts); }
+  showToast(`Moved to "${folderName}"`);
   if (state.insightsView === 'saved') renderSavedPanel();
+}
+
+function handleFolderSelectChange(sel) {
+  const url = sel.dataset.url;
+  if (sel.value === '__new__') {
+    // Reset display to current value before swapping to input
+    const post = getSavedPosts().find(p => p.url === url);
+    sel.value = post?.folder || 'Uncategorized';
+    showInlineFolderInput(sel, url);
+  } else {
+    assignFolder(url, sel.value);
+  }
+}
+
+function showInlineFolderInput(sel, url) {
+  const wrap = sel.closest('.folder-select-wrap');
+  wrap.innerHTML = `
+    <span class="text-xs text-gray-400">📁</span>
+    <input type="text" data-url="${escHtml(url)}" placeholder="Folder name"
+      class="text-xs border border-blue-400 rounded px-1.5 py-0.5 w-28
+             focus:outline-none focus:ring-1 focus:ring-blue-500"
+      onkeydown="handleFolderInputKey(event,this)">
+    <button onclick="confirmFolderInput(this.parentElement.querySelector('input'))"
+      class="text-xs text-blue-600 hover:text-blue-800 font-medium px-1 transition">✓</button>
+    <button onclick="cancelFolderInput()"
+      class="text-xs text-gray-400 hover:text-gray-600 px-1 transition">✕</button>`;
+  setTimeout(() => wrap.querySelector('input')?.focus(), 0);
+}
+
+function handleFolderInputKey(event, input) {
+  if (event.key === 'Enter')  confirmFolderInput(input);
+  if (event.key === 'Escape') cancelFolderInput();
+}
+
+function confirmFolderInput(input) {
+  const name = input?.value.trim();
+  const url  = input?.dataset.url;
+  if (name && url) assignFolder(url, name);
+  else             renderSavedPanel();
+}
+
+function cancelFolderInput() {
+  renderSavedPanel();
+}
+
+function renameFolder(oldName, newName) {
+  if (!newName || newName === oldName) return;
+  const posts = getSavedPosts();
+  posts.forEach(p => { if ((p.folder || 'Uncategorized') === oldName) p.folder = newName; });
+  setSavedPosts(posts);
+  if (_savedActiveFolder === oldName) _savedActiveFolder = newName;
+  renderSavedPanel();
+}
+
+function deleteFolder(name) {
+  const posts = getSavedPosts();
+  posts.forEach(p => { if ((p.folder || 'Uncategorized') === name) p.folder = 'Uncategorized'; });
+  setSavedPosts(posts);
+  if (_savedActiveFolder === name) _savedActiveFolder = 'All';
+  renderSavedPanel();
 }
 
 function unsavePost(url) {
@@ -1545,12 +1663,18 @@ function showToast(msg) {
 }
 
 // ── SAVED PANEL ────────────────────────────────────────────
+function setSavedFolder(name) {
+  _savedActiveFolder = name;
+  renderSavedPanel();
+}
+
 function renderSavedPanel() {
   const panel = document.getElementById('saved-panel');
   if (!panel) return;
-  const posts = getSavedPosts();
+  const allPosts = getSavedPosts();
 
-  if (posts.length === 0) {
+  if (allPosts.length === 0) {
+    _savedActiveFolder = 'All';
     panel.innerHTML = `<div class="insight-section text-center py-10">
       <div class="text-3xl mb-2">🔖</div>
       <p class="text-sm font-medium text-gray-700 mb-1">No saved posts yet</p>
@@ -1559,33 +1683,100 @@ function renderSavedPanel() {
     return;
   }
 
+  const folders = getFolders();
+  // Ensure active folder is still valid
+  if (_savedActiveFolder !== 'All' && !folders.includes(_savedActiveFolder)) {
+    _savedActiveFolder = 'All';
+  }
+
+  const visiblePosts = _savedActiveFolder === 'All'
+    ? allPosts
+    : allPosts.filter(p => (p.folder || 'Uncategorized') === _savedActiveFolder);
+
+  // ── Folder tabs ──
+  const allCount = allPosts.length;
+  const folderTabs = [`
+    <button data-folder="All" onclick="setSavedFolderFromBtn(this)"
+      class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition ${_savedActiveFolder === 'All' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'}">
+      All <span class="opacity-75">${allCount}</span>
+    </button>`]
+    .concat(folders.map(f => {
+      const count        = allPosts.filter(p => (p.folder || 'Uncategorized') === f).length;
+      const isActive     = _savedActiveFolder === f;
+      const isUncategorized = f === 'Uncategorized';
+      return `
+        <div class="relative inline-flex items-center group">
+          <button data-folder="${escHtml(f)}" onclick="setSavedFolderFromBtn(this)"
+            class="inline-flex items-center gap-1 pl-3 ${!isUncategorized ? 'pr-1' : 'pr-3'} py-1 rounded-full text-xs font-semibold border transition ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600'}">
+            📁 ${escHtml(f)} <span class="opacity-75">${count}</span>
+          </button>
+          ${!isUncategorized ? `<div class="inline-flex items-center gap-0.5 pl-0.5 pr-2 py-1 rounded-r-full border border-l-0 transition text-gray-400 ${isActive ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300 group-hover:border-blue-400'}">
+            <button data-folder="${escHtml(f)}" onclick="startRenameFolderFromBtn(event,this)" title="Rename"
+              class="hover:text-blue-${isActive ? '200' : '600'} transition text-xs leading-none">✏️</button>
+            <button data-folder="${escHtml(f)}" onclick="confirmDeleteFolderFromBtn(this)" title="Delete"
+              class="hover:text-red-${isActive ? '200' : '500'} transition text-xs leading-none">🗑</button>
+          </div>` : ''}
+        </div>`;
+    }));
+
+  const tabsHtml = `<div class="flex flex-wrap gap-1.5 mb-3">${folderTabs.join('')}</div>`;
+
+  // ── Toolbar ──
+  const exportLabel = _savedActiveFolder === 'All' ? 'Export all' : `Export "${escHtml(_savedActiveFolder)}"`;
   const toolbar = `<div class="flex items-center gap-2 mb-3 flex-wrap">
-    <span class="text-sm font-medium text-gray-700">${posts.length} saved post${posts.length !== 1 ? 's' : ''}</span>
+    <span class="text-sm font-medium text-gray-700">${visiblePosts.length} post${visiblePosts.length !== 1 ? 's' : ''}${_savedActiveFolder !== 'All' ? ` in "${escHtml(_savedActiveFolder)}"` : ''}</span>
     <div class="ml-auto flex items-center gap-2 flex-wrap">
-      <button onclick="exportToExcel()"
+      <button onclick="exportActiveFolder('excel')"
         class="inline-flex items-center gap-1.5 text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition font-medium">
-        📊 Export Excel
+        📊 ${exportLabel} (Excel)
       </button>
-      <button onclick="exportBackupJSON()"
+      <button onclick="exportActiveFolder('json')"
         class="inline-flex items-center gap-1.5 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition font-medium">
-        💾 Export Backup
+        💾 ${escHtml(exportLabel)} (JSON)
       </button>
       <button onclick="document.getElementById('import-json-input').click()"
         class="inline-flex items-center gap-1.5 text-xs bg-white text-gray-600 px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 transition font-medium">
-        📂 Import Backup
+        📂 Import
       </button>
     </div>
   </div>`;
 
-  panel.innerHTML = toolbar + `<div class="space-y-3">${posts.map(buildSavedCard).join('')}</div>`;
+  const cardsHtml = visiblePosts.length
+    ? `<div class="space-y-3">${visiblePosts.map(p => buildSavedCard(p, folders)).join('')}</div>`
+    : `<div class="text-center py-8 text-gray-400 text-sm">No posts in this folder.</div>`;
+
+  panel.innerHTML = tabsHtml + toolbar + cardsHtml;
 }
 
-function buildSavedCard(p) {
+function setSavedFolderFromBtn(btn)          { setSavedFolder(btn.dataset.folder); }
+function startRenameFolderFromBtn(event, btn) { startRenameFolder(event, btn.dataset.folder); }
+function confirmDeleteFolderFromBtn(btn)      { confirmDeleteFolder(btn.dataset.folder); }
+function exportActiveFolder(fmt) {
+  if (fmt === 'excel') exportToExcel(_savedActiveFolder);
+  else                 exportBackupJSON(_savedActiveFolder);
+}
+
+function startRenameFolder(event, oldName) {
+  event.stopPropagation();
+  const newName = prompt(`Rename folder "${oldName}" to:`, oldName);
+  if (newName && newName.trim() && newName.trim() !== oldName) {
+    renameFolder(oldName, newName.trim());
+  }
+}
+
+function confirmDeleteFolder(name) {
+  if (confirm(`Delete folder "${name}"? Posts will be moved to Uncategorized.`)) {
+    deleteFolder(name);
+  }
+}
+
+function buildSavedCard(p, folders) {
   const url     = escHtml(p.url || '#');
   const title   = escHtml(p.title   || '');
   const snippet = escHtml(p.content || '');
   const dateStr = p.savedAt ? fmtDate(p.savedAt) : '';
   const isLi    = p.platform === 'linkedin';
+  const current = p.folder || 'Uncategorized';
 
   const parts = [];
   if (p.likes    != null) parts.push(`<span title="Reactions">👍 ${fmtNum(p.likes)}</span>`);
@@ -1599,6 +1790,10 @@ function buildSavedCard(p) {
     ? `<div class="w-8 h-8 bg-blue-700 rounded-full flex items-center justify-center shrink-0 mt-0.5"><svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></div>`
     : `<div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shrink-0 mt-0.5"><svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12.07h2.54V9.845c0-2.508 1.493-3.891 3.776-3.891 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562v1.875h2.773l-.443 2.89h-2.33v6.988C20.343 21.2 24 17.063 24 12.073z"/></svg></div>`;
 
+  const folderOptions = (folders || getFolders()).map(f =>
+    `<option value="${escHtml(f)}"${f === current ? ' selected' : ''}>${escHtml(f)}</option>`
+  ).join('') + '<option value="__new__">＋ New folder…</option>';
+
   return `<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 card-enter">
     <div class="flex items-start gap-3">
       ${iconHtml}
@@ -1611,11 +1806,19 @@ function buildSavedCard(p) {
           <a href="${url}" target="_blank" rel="noopener noreferrer"
             class="text-xs text-blue-500 hover:underline truncate max-w-xs">${url}</a>
           ${dateStr ? `<span class="text-xs text-gray-400">· Saved ${dateStr}</span>` : ''}
+          <span class="folder-select-wrap inline-flex items-center gap-1 text-xs text-gray-500">
+            📁
+            <select data-url="${url}" onchange="handleFolderSelectChange(this)"
+              class="text-xs text-gray-500 bg-transparent border-none cursor-pointer
+                     hover:text-blue-600 focus:outline-none focus:text-blue-600 max-w-[140px]">
+              ${folderOptions}
+            </select>
+          </span>
         </div>
         ${engHtml}
       </div>
       <button class="shrink-0 mt-0.5 p-1 rounded text-blue-500 hover:text-red-500 transition save-btn saved"
-        title="Unsave post" onclick="unsavePost('${url.replace(/'/g,"\\'")}')">
+        data-url="${url}" title="Unsave post" onclick="unsavePost(this.dataset.url)">
         ${savedBtnSvgFilled()}
       </button>
     </div>
@@ -1623,11 +1826,11 @@ function buildSavedCard(p) {
 }
 
 // ── EXPORT / IMPORT ────────────────────────────────────────
-async function exportToExcel() {
-  const posts = getSavedPosts();
+async function exportToExcel(folder = null) {
+  let posts = getSavedPosts();
+  if (folder && folder !== 'All') posts = posts.filter(p => (p.folder || 'Uncategorized') === folder);
   if (!posts.length) { showToast('No saved posts to export'); return; }
 
-  // Lazy-load SheetJS only on first use
   if (!window.XLSX) {
     try {
       await new Promise((resolve, reject) => {
@@ -1642,6 +1845,7 @@ async function exportToExcel() {
 
   const rows = posts.map(p => ({
     Platform:     p.platform || '',
+    Folder:       p.folder   || 'Uncategorized',
     Title:        p.title    || '',
     URL:          p.url      || '',
     Content:      p.content  || '',
@@ -1652,22 +1856,25 @@ async function exportToExcel() {
   }));
 
   const ws = XLSX.utils.json_to_sheet(rows);
-  // Auto column widths
   const colWidths = Object.keys(rows[0]).map(k => ({ wch: Math.max(k.length, 18) }));
   ws['!cols'] = colWidths;
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Saved Posts');
-  XLSX.writeFile(wb, `saved-posts-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const sheetName = folder && folder !== 'All' ? folder.slice(0, 31) : 'Saved Posts';
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  const suffix = folder && folder !== 'All' ? `-${folder.replace(/[^a-z0-9]/gi,'_')}` : '';
+  XLSX.writeFile(wb, `saved-posts${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   showToast(`Exported ${posts.length} posts to Excel`);
 }
 
-function exportBackupJSON() {
-  const posts = getSavedPosts();
+function exportBackupJSON(folder = null) {
+  let posts = getSavedPosts();
+  if (folder && folder !== 'All') posts = posts.filter(p => (p.folder || 'Uncategorized') === folder);
   if (!posts.length) { showToast('No saved posts to export'); return; }
   const blob = new Blob([JSON.stringify(posts, null, 2)], { type: 'application/json' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `saved-posts-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const suffix = folder && folder !== 'All' ? `-${folder.replace(/[^a-z0-9]/gi,'_')}` : '';
+  a.download = `saved-posts${suffix}-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
   showToast(`Exported ${posts.length} posts as JSON`);
@@ -1705,7 +1912,7 @@ function handleImportJSON(event) {
 
 // ── INSIGHTS PANEL ─────────────────────────────────────────
 function insightsPlatform() {
-  return state.platform === 'both' ? state.activeTab : state.platform;
+  return state.activeTab;
 }
 
 function setInsightsView(v) {
@@ -2088,7 +2295,7 @@ async function doSearch(forceRefresh = false) {
   const dateTo       = document.getElementById('date-to').value   || null;
   const lang         = document.getElementById('lang').value || '';
   const totalResults = parseInt(document.getElementById('total-results').value) || 10;
-  const platform     = state.platform;
+  const platforms    = new Set(state.platforms); // snapshot — mid-search toggles don't affect this run
 
   state.keyword = keyword; state.page = page; state.dateFrom = dateFrom;
   state.dateTo = dateTo; state.lang = lang; state.perPage = 10;
@@ -2101,7 +2308,7 @@ async function doSearch(forceRefresh = false) {
   state.ttEnrichedPages = new Set(); state.ttEnrichingPages = new Set();
   state.ttResults = [];
   state.running = true;
-  if (platform === 'both') state.activeTab = 'facebook';
+  if (platforms.size > 1 && !platforms.has(state.activeTab)) state.activeTab = [...platforms][0];
 
   // Reset sort state
   state.sortMode = 'default';
@@ -2123,12 +2330,12 @@ async function doSearch(forceRefresh = false) {
   setStatus('searching', 'Searching…');
   hideCacheNotice(); clearResults(); hidePagination();
   document.getElementById('progress-wrap').classList.add('hidden');
-  if (platform === 'both') _syncTabBar();
+  if (platforms.size > 1) _syncTabBar();
 
   // ── Cache check ──
   if (!forceRefresh) {
     let hitFb = false, hitLi = false, hitTt = false;
-    if (platform === 'facebook' || platform === 'both') {
+    if (platforms.has('facebook')) {
       const cachedFb = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'facebook');
       if (cachedFb) {
         state.allResults    = cachedFb.results;
@@ -2137,7 +2344,7 @@ async function doSearch(forceRefresh = false) {
         hitFb = true;
       }
     }
-    if (platform === 'linkedin' || platform === 'both') {
+    if (platforms.has('linkedin')) {
       const cachedLi = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'linkedin');
       if (cachedLi) {
         state.liResults        = cachedLi.results;
@@ -2146,18 +2353,18 @@ async function doSearch(forceRefresh = false) {
         hitLi = true;
       }
     }
-    if (platform === 'tiktok') {
+    if (platforms.has('tiktok')) {
       const cachedTt = loadCache(keyword, dateFrom, dateTo, lang, totalResults, 'tiktok');
       if (cachedTt) {
         state.ttResults       = cachedTt.results;
         state.ttEnrichedPages = new Set(cachedTt.enrichedPages || []);
-        showCacheNotice(cachedTt.savedAt);
+        if (!hitFb && !hitLi) showCacheNotice(cachedTt.savedAt);
         hitTt = true;
       }
     }
-    const needFb = (platform === 'facebook' || platform === 'both') && !hitFb;
-    const needLi = (platform === 'linkedin' || platform === 'both') && !hitLi;
-    const needTt = (platform === 'tiktok') && !hitTt;
+    const needFb = platforms.has('facebook') && !hitFb;
+    const needLi = platforms.has('linkedin') && !hitLi;
+    const needTt = platforms.has('tiktok')   && !hitTt;
     if (!needFb && !needLi && !needTt) {
       hideStatus(); renderCurrentPage();
       state.running = false; setSearchBtnState(false);
@@ -2178,7 +2385,7 @@ async function doSearch(forceRefresh = false) {
     });
   };
 
-  // ── Parallel fire-and-forget for 'both' mode ──
+  // ── Parallel fire-and-forget ──
   let fbIdx = 0, liIdx = 0, ttIdx = 0;
 
   const onFbBatch = (newOrganic) => {
@@ -2186,8 +2393,8 @@ async function doSearch(forceRefresh = false) {
     if (!normalized.length) return;
     state.allResults.push(...normalized);
     enrichCurrentPage('facebook');
-    if (platform !== 'both' || state.activeTab === 'facebook') renderCurrentPage();
-    if (platform === 'both') _syncTabBar();
+    if (platforms.size === 1 || state.activeTab === 'facebook') renderCurrentPage();
+    if (platforms.size > 1) _syncTabBar();
   };
 
   const onLiBatch = (newOrganic) => {
@@ -2195,8 +2402,8 @@ async function doSearch(forceRefresh = false) {
     if (!normalized.length) return;
     state.liResults.push(...normalized);
     enrichCurrentPage('linkedin');
-    if (platform !== 'both' || state.activeTab === 'linkedin') renderCurrentPage();
-    if (platform === 'both') _syncTabBar();
+    if (platforms.size === 1 || state.activeTab === 'linkedin') renderCurrentPage();
+    if (platforms.size > 1) _syncTabBar();
   };
 
   const onTtBatch = (newOrganic) => {
@@ -2204,7 +2411,8 @@ async function doSearch(forceRefresh = false) {
     if (!normalized.length) return;
     state.ttResults.push(...normalized);
     enrichCurrentPage('tiktok');
-    if (platform === 'tiktok') renderCurrentPage();
+    if (platforms.size === 1 || state.activeTab === 'tiktok') renderCurrentPage();
+    if (platforms.size > 1) _syncTabBar();
   };
 
   const fbDone = { v: false }, liDone = { v: false }, ttDone = { v: false };
@@ -2218,7 +2426,7 @@ async function doSearch(forceRefresh = false) {
     renderCurrentPage();
     addToHistory({
       id:           Date.now(),
-      keyword, platform, dateFrom, dateTo, lang, totalResults,
+      keyword, platforms: [...platforms], dateFrom, dateTo, lang, totalResults,
       timestamp:    new Date().toISOString(),
       allResults:   state.allResults,
       liResults:    state.liResults,
@@ -2230,21 +2438,21 @@ async function doSearch(forceRefresh = false) {
   };
 
   try {
-    if (platform !== 'linkedin' && platform !== 'tiktok') {
+    if (platforms.has('facebook')) {
       runGoogleSearch(keyword, totalResults, dateFrom, dateTo, lang,
         msg => setStatus('searching', msg), onFbBatch)
         .then(() => { fbDone.v = true; checkAllDone(); })
         .catch(() => { fbDone.v = true; checkAllDone(); });
     } else { fbDone.v = true; }
 
-    if (platform !== 'facebook' && platform !== 'tiktok') {
+    if (platforms.has('linkedin')) {
       runLinkedInSearch(keyword, totalResults, dateFrom, dateTo, lang,
         msg => setStatus('searching', msg), onLiBatch)
         .then(() => { liDone.v = true; checkAllDone(); })
         .catch(() => { liDone.v = true; checkAllDone(); });
     } else { liDone.v = true; }
 
-    if (platform === 'tiktok') {
+    if (platforms.has('tiktok')) {
       runTikTokSearch(keyword, totalResults, dateFrom, dateTo, lang,
         msg => setStatus('searching', msg), onTtBatch)
         .then(() => { ttDone.v = true; checkAllDone(); })
@@ -2264,9 +2472,14 @@ function clearCacheAndSearch() { clearCacheForCurrent(); doSearch(true); }
 // ── ACTIVE RESULTS HELPER ──────────────────────────────────
 function getActiveResults() {
   const raw = (() => {
-    if (state.platform === 'linkedin') return state.liResults;
-    if (state.platform === 'tiktok')   return state.ttResults;
-    if (state.platform === 'both') return state.activeTab === 'linkedin' ? state.liResults : state.allResults;
+    if (state.platforms.size === 1) {
+      const only = [...state.platforms][0];
+      if (only === 'linkedin') return state.liResults;
+      if (only === 'tiktok')   return state.ttResults;
+      return state.allResults;
+    }
+    if (state.activeTab === 'linkedin') return state.liResults;
+    if (state.activeTab === 'tiktok')   return state.ttResults;
     return state.allResults;
   })();
   if (state.sortMode !== 'engagement') return raw;
@@ -2397,8 +2610,7 @@ async function enrichTikTokProgressively(results, onProgress, onCardUpdate, onDo
 // ── LAZY PER-PAGE ENRICHMENT ───────────────────────────────
 // forPlatform: 'facebook' | 'linkedin' | 'tiktok' | null (auto-detect from activeTab)
 async function enrichCurrentPage(forPlatform = null) {
-  const effectivePlatform = forPlatform ||
-    (state.platform === 'both' ? state.activeTab : state.platform);
+  const effectivePlatform = forPlatform || state.activeTab;
   const isLi = effectivePlatform === 'linkedin';
   const isTt = effectivePlatform === 'tiktok';
   const results      = isTt ? state.ttResults      : isLi ? state.liResults      : state.allResults;
@@ -2426,8 +2638,7 @@ async function enrichCurrentPage(forPlatform = null) {
   enrichedPgs.delete(page);
   enrichingPgs.add(page);
 
-  const isActiveView = (state.platform !== 'both') ||
-    (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+  const isActiveView = state.platforms.size === 1 || state.activeTab === effectivePlatform;
   if (isActiveView) {
     showProgressBar(0, pending.length);
     const pageLabel = state.totalResults > state.perPage ? ` (page ${page})` : '';
@@ -2440,8 +2651,7 @@ async function enrichCurrentPage(forPlatform = null) {
   await enrichFn(
     pending,
     (done, total) => {
-      const stillActive = (state.platform !== 'both') ||
-        (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+      const stillActive = state.platforms.size === 1 || state.activeTab === effectivePlatform;
       if (stillActive) updateProgressBar(done, total);
     },
     (updated) => updateCardInDOM(updated),
@@ -2455,8 +2665,7 @@ async function enrichCurrentPage(forPlatform = null) {
           return;
         }
         enrichedPgs.add(page);
-        const nowActive = (state.platform !== 'both') ||
-          (isLi ? state.activeTab === 'linkedin' : state.activeTab === 'facebook');
+        const nowActive = state.platforms.size === 1 || state.activeTab === effectivePlatform;
         const doSave = () => {
           saveCache(state.keyword, state.dateFrom, state.dateTo, state.lang,
             state.totalResults, state.allResults, state.enrichedPages, 'facebook');
@@ -2494,7 +2703,7 @@ function renderCurrentPage() {
   const start = (state.page - 1) * state.perPage;
   renderCards(results.slice(start, start + state.perPage));
   updateMeta(); updatePagination();
-  if (state.platform === 'both') _syncTabBar();
+  if (state.platforms.size > 1) _syncTabBar();
   // Keep Insights panel in sync when enrichment completes while user is on that tab
   if (state.insightsView === 'insights') renderInsightsPanel();
 }
@@ -2751,7 +2960,7 @@ function updateMeta() {
     return;
   }
   const totalPages = Math.ceil(total / state.perPage);
-  const isLi = (state.platform === 'linkedin') || (state.platform === 'both' && state.activeTab === 'linkedin');
+  const isLi = state.activeTab === 'linkedin';
   const enrichedPgs    = isLi ? state.liEnrichedPages : state.enrichedPages;
   const enrichedOnPage = enrichedPgs.has(state.page);
   const pendingNote    = !enrichedOnPage && total > state.perPage && state.sortMode === 'default' ? ' · enriching…' : '';
@@ -3124,14 +3333,14 @@ function renderComment(c) {
 document.addEventListener('DOMContentLoaded', () => {
   initAuth();
   document.getElementById('token-input').addEventListener('keydown', e => { if (e.key==='Enter') saveToken(); });
-  setPlatform('facebook'); // set initial active styles
+  // initial button styles already correct via HTML class="plat-btn active" on facebook
   updateSavedTabCount();   // show correct count badge on load
 });
 
 // ── EXPOSE TO WINDOW (required for onclick= attributes in ES module scope) ──
 window.saveToken                = saveToken;
 window.doSearch                 = doSearch;
-window.setPlatform              = setPlatform;
+window.togglePlatform           = togglePlatform;
 window.setDatePreset            = setDatePreset;
 window.clearCacheAndSearch      = clearCacheAndSearch;
 window.changePage               = changePage;
@@ -3157,6 +3366,18 @@ window.unsavePost               = unsavePost;
 window.exportToExcel            = exportToExcel;
 window.exportBackupJSON         = exportBackupJSON;
 window.handleImportJSON         = handleImportJSON;
+window.setSavedFolder             = setSavedFolder;
+window.setSavedFolderFromBtn      = setSavedFolderFromBtn;
+window.assignFolder               = assignFolder;
+window.handleFolderSelectChange   = handleFolderSelectChange;
+window.handleFolderInputKey       = handleFolderInputKey;
+window.confirmFolderInput         = confirmFolderInput;
+window.cancelFolderInput          = cancelFolderInput;
+window.startRenameFolder          = startRenameFolder;
+window.startRenameFolderFromBtn   = startRenameFolderFromBtn;
+window.confirmDeleteFolder        = confirmDeleteFolder;
+window.confirmDeleteFolderFromBtn = confirmDeleteFolderFromBtn;
+window.exportActiveFolder         = exportActiveFolder;
 window.restoreFromHistory       = restoreFromHistory;
 window.deleteHistoryEntry       = deleteHistoryEntry;
 window.clearHistory             = clearHistory;
