@@ -3373,6 +3373,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', e => {
     const pop = document.getElementById('folder-popover');
     if (pop && !pop.classList.contains('hidden') &&
+        document.contains(e.target) &&          // skip if target was removed by innerHTML swap
         !e.target.closest('#folder-popover') &&
         !e.target.closest('.save-btn')) {
       closeFolderPopover();
