@@ -10,6 +10,64 @@ import {
 const APIFY_BASE = 'https://api.apify.com/v2';
 
 /**
+ * Mock all external CDN URLs that are blocked in this sandbox environment.
+ * Must be called before page.goto().
+ *
+ * - esm.sh: critical — the entire <script type="module"> fails if this import
+ *   can't resolve (ES module resolution is strict).
+ * - cdn.tailwindcss.com: inject minimal CSS so .hidden keeps working.
+ * - cdnjs.cloudflare.com/Chart.js: stub window.Chart to avoid ReferenceErrors.
+ */
+export async function mockCDNs(page) {
+  // esm.sh — return a minimal Anthropic stub module
+  await page.route('https://esm.sh/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: `
+export default class Anthropic {
+  constructor(opts = {}) {}
+  messages = {
+    create: async () => ({
+      id: 'stub',
+      content: [{ type: 'text', text: '{"topics":[],"suggestions":[],"sentiment":{"positive":50,"neutral":30,"negative":20}}' }],
+      stop_reason: 'end_turn',
+    }),
+  };
+}
+export class APIError extends Error {}
+`,
+    });
+  });
+
+  // Tailwind CDN — inject .hidden style so display:none keeps working in tests
+  await page.route('https://cdn.tailwindcss.com**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `(function(){
+  const s = document.createElement('style');
+  s.textContent = '.hidden{display:none!important}';
+  document.head.appendChild(s);
+})();`,
+    });
+  });
+
+  // Chart.js — stub window.Chart to prevent ReferenceErrors in insights rendering
+  await page.route('https://cdnjs.cloudflare.com/ajax/libs/Chart.js/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `window.Chart = class Chart {
+  constructor(ctx, cfg) {}
+  update() {} destroy() {} resize() {}
+  static register() {}
+};`,
+    });
+  });
+}
+
+/**
  * Write sl_apify_token to localStorage before the page module script runs,
  * so initAuth() finds a token and shows #app instead of #token-screen.
  * Must be called before page.goto().
@@ -116,8 +174,10 @@ export async function seedLocalStorage(page, entries) {
 /**
  * Navigate to path and wait for #app to become visible.
  * bypassTokenScreen (or manual token setup) must be called first.
+ * Automatically mocks blocked CDN URLs before navigating.
  */
 export async function gotoApp(page, path) {
+  await mockCDNs(page);
   await page.goto(path);
   await page.waitForSelector('#app:not(.hidden)', { timeout: 10_000 });
 }

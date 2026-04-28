@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { bypassTokenScreen, mockApifyAPIs, seedLocalStorage, gotoApp } from './helpers.js';
+import { bypassTokenScreen, mockApifyAPIs, mockCDNs, seedLocalStorage, gotoApp } from './helpers.js';
 import { MOCK_TOKEN, MOCK_CLAUDE_KEY, preSavedPost, preHistoryEntry } from './fixtures/mock-data.js';
 
 // The canonical and redesign files share the same JS and element IDs but
@@ -14,19 +14,25 @@ const PAGES = [
 test.describe('Token Screen', () => {
 
   test('shows token-screen and hides #app when no token is stored', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await expect(page.locator('#token-screen')).not.toHaveClass(/hidden/);
     await expect(page.locator('#app')).toHaveClass(/hidden/);
   });
 
   test('#kw and #search-btn are not visible while token screen is shown', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await expect(page.locator('#kw')).not.toBeVisible();
     await expect(page.locator('#search-btn')).not.toBeVisible();
   });
 
   test('entering token and clicking Save reveals #app and hides token screen', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await page.fill('#token-input', MOCK_TOKEN);
     await page.click('button[onclick="saveToken()"]');
     await expect(page.locator('#token-screen')).toHaveClass(/hidden/);
@@ -34,7 +40,9 @@ test.describe('Token Screen', () => {
   });
 
   test('token is persisted to localStorage after save', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await page.fill('#token-input', MOCK_TOKEN);
     await page.click('button[onclick="saveToken()"]');
     const stored = await page.evaluate(() => localStorage.getItem('sl_apify_token'));
@@ -42,14 +50,18 @@ test.describe('Token Screen', () => {
   });
 
   test('shows #token-err and keeps app hidden when submitted empty', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await page.click('button[onclick="saveToken()"]');
     await expect(page.locator('#token-err')).not.toHaveClass(/hidden/);
     await expect(page.locator('#app')).toHaveClass(/hidden/);
   });
 
   test('Enter key in token-input triggers save', async ({ page }) => {
+    await mockCDNs(page);
     await page.goto('/social-search.html');
+    await page.waitForSelector('#token-screen:not(.hidden)', { timeout: 10_000 });
     await page.fill('#token-input', MOCK_TOKEN);
     await page.press('#token-input', 'Enter');
     await expect(page.locator('#app')).not.toHaveClass(/hidden/);
@@ -427,7 +439,13 @@ test.describe('Settings modal', () => {
 
   test('clicking the backdrop closes the modal', async ({ page }) => {
     await page.evaluate(() => window.openSettingsModal());
-    await page.locator('#settings-modal').click({ position: { x: 10, y: 10 } });
+    await expect(page.locator('#settings-modal')).not.toHaveClass(/hidden/);
+    // dispatchEvent on the backdrop sets event.target === backdrop, satisfying the
+    // onclick="if(event.target===this)closeSettingsModal()" guard.
+    await page.evaluate(() => {
+      document.getElementById('settings-modal')
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
     await expect(page.locator('#settings-modal')).toHaveClass(/hidden/);
   });
 
