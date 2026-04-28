@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.8.0 — 2026-04-28
+
+### Added
+- **Redesigned UI** (`social-search-redesign.html`): New file implementing a Google Trends-inspired visual redesign. All existing functionality is preserved; only the visual layer changes.
+  - **Design system**: CSS custom properties for the full light/dark palette (`--bg`, `--ink`, `--accent`, `--fb`, `--li`, `--tt`, shadows, radii). Inter Tight + JetBrains Mono fonts loaded from Google Fonts.
+  - **Dark mode**: Toggle button in the topbar switches `data-theme="dark"` on `<html>`; preference is persisted to `localStorage`.
+  - **Topbar**: Sticky header with brand name, integrated pill-style search bar, theme toggle, and settings button — replaces the separate search card.
+  - **Filter row**: Chip-style platform toggles with coloured dot indicators (blue for Facebook, LinkedIn blue for LinkedIn, TikTok gradient), date preset chips, language and result-count selects embedded in chips, sort select, and cache-clear button.
+  - **View tabs**: Underline-active tab style with monospace count badges, replacing the emoji tabs.
+  - **Platform sub-tabs**: Pill-style tabs on a sunken background replace the old border-bottom tab bar.
+  - **Two-column results layout**: Results column + 300 px sticky sidebar; collapses to a single column below 980 px.
+  - **Sidebar snapshot panel**: Shows total post count and per-platform breakdown after each search via `renderSidePanel()`.
+  - **Redesigned cards**: `<article class="card">` with avatar-initials circle, platform mark badge, and a stat row with separators.
+  - **Settings modal**: Mono-uppercase field labels, `field-input` styling, and usage bar.
+  - **History panel**: Clean grid-row layout with platform dot indicators.
+
+---
+
 ## v1.7.0 — 2026-04-23
 
 ### Added
