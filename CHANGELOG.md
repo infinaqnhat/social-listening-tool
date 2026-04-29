@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.9.0 — 2026-04-29
+
+### Added
+- **Playwright test suite** (`tests/`): 76 automated QA tests covering both `social-search.html` and `social-search-redesign.html`. No real API token or credits needed — all Apify and CDN calls are mocked.
+  - **Token screen**: shows by default, validates empty submission, saves token, unlocks app.
+  - **Platform toggles**: single/multi-select state, sub-tab bar show/hide, last-platform guard.
+  - **Date presets**: active-class toggling, date range calculation, custom dates panel show/hide. Covers both files (canonical uses `border-blue-500`; redesign uses `.active`).
+  - **Search flow**: status bar, result count, card `data-platform` attribute, sort control, enrichment state transition to `.card-enriched`.
+  - **View tabs**: panel visibility switching (Results / Insights / Saved / History).
+  - **Saved posts**: badge count, save/unsave, `.saved` class toggle, pre-seeded localStorage state.
+  - **Settings modal**: open/close, field pre-fill, validation, backdrop dismiss, localStorage persistence.
+  - **History panel**: empty state, pre-seeded entries, delete, restore, post-search entry creation.
+  - **Redesign structural parity**: all required element IDs present, chip classes correct, end-to-end search flow.
+- **`package.json`**: minimal dev setup with `@playwright/test@^1.56.1` and `test` / `test:headed` / `test:debug` scripts.
+- **`playwright.config.js`**: single Chromium project, python3 HTTP server on port 8765, screenshot + video on failure.
+- **`tests/helpers.js`**: `bypassTokenScreen`, `mockApifyAPIs`, `mockCDNs`, `seedLocalStorage`, `gotoApp` utilities.
+- **`tests/fixtures/mock-data.js`**: Apify API response fixtures and pre-seeded localStorage state objects.
+- **`CLAUDE.md`**: project architecture reference covering state, search flow, URL matching, enrichment, Claude insights, saved posts, and `window.*` export pattern.
+
+---
+
 ## v1.8.0 — 2026-04-28
 
 ### Added
