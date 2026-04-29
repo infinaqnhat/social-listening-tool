@@ -1,0 +1,29 @@
+name: Scheduled Social Search
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 8am UTC daily
+  workflow_dispatch:       # manual trigger from GitHub UI
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run scheduled searches
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: node scripts/scheduled-search.mjs
+
+      - name: Upload results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-results-${{ github.run_id }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
